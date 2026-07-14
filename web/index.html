@@ -174,10 +174,11 @@ const $ = (id) => document.getElementById(id);
 function short(s){ return s && s.length > 20 ? s.slice(0,10)+"…"+s.slice(-6) : (s||"—"); }
 
 async function tick() {
-  let att, chans;
+  let att, chans, scan;
   try {
     att = await (await fetch('/attestation')).json();
     chans = await (await fetch('/channels')).json();
+    scan = await (await fetch('/breaches')).json();
   } catch (e) {
     setState('breach', 'Tower unreachable', 'The console cannot reach the tower. If a node relies on it, it is currently unprotected.');
     return;
@@ -189,7 +190,18 @@ async function tick() {
   $('m-chan').textContent = chans.count ?? 0;
   $('m-tenant').textContent = tenants.size;
   $('chan-count').textContent = chans.count ?? 0;
-  renderChannels(list);
+  const verdicts = {};
+  (scan.outcomes || []).forEach(o => { verdicts[o.channel_id] = o.verdict; });
+  renderChannels(list, verdicts);
+
+  // A live breach dominates everything — surface it above liveness state.
+  if ((scan.breaches || 0) > 0) {
+    const b = (scan.outcomes || []).find(o => o.verdict && o.verdict.state === 'breach');
+    const detail = b ? `channel ${short(b.channel_id)}: attacker broadcast commitment #${b.verdict.broadcast_commitment}, tower holds #${b.verdict.held_commitment}` : '';
+    setState('breach', `⚠ BREACH — ${scan.breaches} channel(s) under attack`,
+      `A stale-state theft was broadcast. ${detail}. The tower is executing the penalty.`);
+    return;
+  }
 
   if (att.live) {
     const a = att.attestation;
@@ -227,7 +239,19 @@ function setState(kind, title, sub) {
   else { alarm.classList.remove('on'); }
 }
 
-function renderChannels(list) {
+function defenseCell(channelId, hasRev, verdicts) {
+  const v = verdicts[channelId];
+  if (v) {
+    if (v.state === 'breach') return '<span style="color:var(--breach);font-weight:600">BREACH — punishing</span>';
+    if (v.state === 'channel_open') return '<span style="color:var(--live)">watching</span>';
+    if (v.state === 'legitimate_close') return '<span style="color:var(--muted)">closed (legit)</span>';
+    if (v.state === 'unactionable') return `<span style="color:var(--warn)" title="${v.reason||''}">not actionable</span>`;
+  }
+  return hasRev ? '<span style="color:var(--live)">defensible</span>' : '<span style="color:var(--dim)">awaiting revocation</span>';
+}
+
+function renderChannels(list, verdicts) {
+  verdicts = verdicts || {};
   const body = $('chan-body');
   if (!list.length) return;
   let rows = list.map(c => {
@@ -238,11 +262,11 @@ function renderChannels(list) {
       <td class="mono">${short(c.channel_id)}</td>
       <td class="tenant">${short(c.node_id)}</td>
       <td>${chips || '<span class="chip">—</span>'}</td>
-      <td class="mono">${hasRev ? '<span style="color:var(--live)">defensible</span>' : '<span style="color:var(--dim)">awaiting revocation</span>'}</td>
+      <td class="mono">${defenseCell(c.channel_id, hasRev, verdicts)}</td>
     </tr>`;
   }).join('');
   body.innerHTML = `<table>
-    <thead><tr><th>Channel</th><th>Node</th><th>Data held</th><th>Defense</th></tr></thead>
+    <thead><tr><th>Channel</th><th>Node</th><th>Data held</th><th>Status</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
 
