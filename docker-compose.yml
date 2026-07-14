@@ -1,0 +1,31 @@
+# Runs the Sentinel watchtower. Point it at a reachable CKB RPC (testnet, a
+# local devnet, or a public node) via CKB_RPC_URL.
+#
+#   CKB_RPC_URL=https://testnet.ckb.dev/rpc docker compose up
+#
+# Then open http://localhost:8080 for the console and http://localhost:8080/attestation
+# for the public liveness proof. A Fiber node protects itself by setting
+#   standalone_watchtower_rpc_url: http://<host>:23456
+#   disable_built_in_watchtower: true
+
+services:
+  sentinel:
+    build: .
+    image: sentinel:latest
+    ports:
+      - "8080:8080"    # dashboard, /attestation, /metrics, /health
+      - "23456:23456"  # JSON-RPC watchtower surface (nodes connect here)
+    volumes:
+      - sentinel-data:/data
+    command:
+      - "--data-dir=/data"
+      - "--http-port=8080"
+      - "--rpc-port=23456"
+      - "--ckb-rpc-url=${CKB_RPC_URL:-http://host.docker.internal:8114}"
+      - "--attest-interval=10"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  sentinel-data:

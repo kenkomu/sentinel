@@ -9,6 +9,7 @@
 use axum::{extract::State, routing::get, Json, Router};
 use sentinel::attest::{self, Attestor, LivenessAttestation};
 use sentinel::ckb::CkbClient;
+use sentinel::metrics::Metrics;
 use sentinel::rpc;
 use sentinel::store;
 use clap::Parser;
@@ -49,6 +50,7 @@ struct AppState {
     store: Store,
     attestor: Arc<Attestor>,
     latest: LatestAttestation,
+    metrics: Metrics,
 }
 
 fn unix_now() -> u64 {
@@ -81,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(channels = store.channel_count(), "loaded store");
 
     let latest: LatestAttestation = Arc::new(RwLock::new(None));
+    let metrics = Metrics::new();
 
     // Background accountability loop: bind each attestation to the live CKB tip.
     let ckb = CkbClient::new(args.ckb_rpc_url.clone());
@@ -88,11 +91,16 @@ async fn main() -> anyhow::Result<()> {
         let attestor = attestor.clone();
         let store = store.clone();
         let latest = latest.clone();
+        let metrics = metrics.clone();
         let interval = args.attest_interval.max(1);
+        let ckb_url = args.ckb_rpc_url.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(interval));
             loop {
                 tick.tick().await;
+                let tenants = store.tenant_count();
+                metrics.channels_watched.set(store.channel_count() as i64);
+                metrics.tenants.set(tenants as i64);
                 match ckb.tip().await {
                     Some(tip) => {
                         let att = attestor.attest_liveness(
@@ -102,13 +110,20 @@ async fn main() -> anyhow::Result<()> {
                             unix_now(),
                         );
                         tracing::debug!(height = tip.number, channels = att.channels_watched, "attested");
+                        metrics.live.set(1);
+                        metrics.ckb_tip_height.set(tip.number as i64);
+                        metrics.attestation_age.set(0);
                         *latest.write().unwrap() = Some(att);
                     }
                     None => {
                         // CKB unreachable: do NOT emit a fresh attestation. A
                         // stale/absent attestation is exactly the signal a client
                         // should act on — the tower cannot currently prove liveness.
-                        tracing::warn!(ckb = %args.ckb_rpc_url, "CKB tip unavailable; withholding attestation");
+                        tracing::warn!(ckb = %ckb_url, "CKB tip unavailable; withholding attestation");
+                        metrics.live.set(0);
+                        if let Some(a) = latest.read().unwrap().as_ref() {
+                            metrics.attestation_age.set(unix_now().saturating_sub(a.timestamp) as i64);
+                        }
                     }
                 }
             }
@@ -119,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
         store: store.clone(),
         attestor: attestor.clone(),
         latest: latest.clone(),
+        metrics: metrics.clone(),
     };
 
     // JSON-RPC watchtower surface — what a Fiber node's
@@ -133,6 +149,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/attestation", get(attestation))
         .route("/channels", get(channels))
+        .route("/metrics", get(metrics_endpoint))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", args.http_port);
@@ -175,4 +192,9 @@ async fn attestation(State(s): State<AppState>) -> Json<serde_json::Value> {
 async fn channels(State(s): State<AppState>) -> Json<serde_json::Value> {
     let list = s.store.all_channels().unwrap_or_default();
     Json(serde_json::json!({ "count": list.len(), "channels": list }))
+}
+
+/// Prometheus exposition endpoint.
+async fn metrics_endpoint(State(s): State<AppState>) -> String {
+    s.metrics.encode()
 }

@@ -109,6 +109,18 @@ impl Store {
         self.channels.len()
     }
 
+    /// Number of distinct nodes (tenants) with at least one watched channel.
+    pub fn tenant_count(&self) -> usize {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        for item in self.channels.iter().flatten() {
+            if let Ok(wc) = serde_json::from_slice::<WatchedChannel>(&item.1) {
+                set.insert(wc.node_id);
+            }
+        }
+        set.len()
+    }
+
     pub fn flush(&self) -> Result<()> {
         self.db.flush()?;
         Ok(())

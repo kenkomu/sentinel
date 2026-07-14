@@ -6,6 +6,7 @@
 pub mod attest;
 pub mod ckb;
 pub mod error;
+pub mod metrics;
 pub mod rpc;
 pub mod store;
 pub mod watch;
