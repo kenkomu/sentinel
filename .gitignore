@@ -1,0 +1,4 @@
+/target
+/sentinel-data
+*.log
+.DS_Store

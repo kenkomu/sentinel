@@ -1,0 +1,45 @@
+[package]
+name = "sentinel"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "An accountable, standalone watchtower service for the Fiber Network"
+repository = "https://github.com/your-handle/sentinel"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# JSON-RPC server: speaks the same JSON-RPC 2.0 wire protocol a Fiber node's
+# `standalone_watchtower_rpc_url` client expects. We implement the 7 watchtower
+# methods ourselves rather than copying Fiber's (unlicensed) source.
+jsonrpsee = { version = "0.24", features = ["server", "http-client", "macros"] }
+
+# HTTP surface: health, metrics, attestations, and the operator dashboard.
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Embedded storage for watched channels, revocation data, and preimages.
+sled = "0.34"
+
+# Signing liveness attestations and registration receipts.
+secp256k1 = { version = "0.29", features = ["rand", "recovery"] }
+sha2 = "0.10"
+hex = "0.4"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+prometheus = "0.13"
+
+# Config + errors
+thiserror = "1"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
