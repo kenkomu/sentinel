@@ -143,6 +143,21 @@ impl CkbClient {
         if res.is_null() { Ok(None) } else { Ok(Some(res)) }
     }
 
+    /// The cell deps a transaction referenced (raw JSON-RPC `CellDep` objects).
+    /// A penalty tx spending a commitment cell needs the same commitment-lock
+    /// code dep the commitment tx used — reading it from the tx makes the
+    /// executor work on any deployment without configuring that dep.
+    pub async fn get_tx_cell_deps(&self, tx_hash: &str) -> anyhow::Result<Vec<Value>> {
+        let res = self.call("get_transaction", json!([tx_hash])).await?;
+        let deps = res
+            .get("transaction")
+            .and_then(|t| t.get("cell_deps"))
+            .and_then(|d| d.as_array())
+            .cloned()
+            .unwrap_or_default();
+        Ok(deps)
+    }
+
     /// Live-cell status for an out point: "live" | "dead" | "unknown".
     pub async fn live_cell_status(&self, tx_hash: &str, index: u32) -> anyhow::Result<String> {
         let out_point = json!({ "tx_hash": tx_hash, "index": format!("0x{index:x}") });

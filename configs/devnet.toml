@@ -1,0 +1,33 @@
+# Sentinel devnet config — enables active defence (penalty broadcast).
+# Fill commitment_lock_dep.tx_hash from the breach's commitment tx (see
+# docs/demo-runbook.md); everything else is devnet-deterministic.
+
+[server]
+data_dir = "/tmp/sentinel-devnet"
+http_port = 8080
+rpc_port = 23456
+attest_interval_secs = 5
+scan_interval_secs = 4
+
+[ckb]
+rpc_url = "http://127.0.0.1:8114"
+reorg_safety_blocks = 3
+request_timeout_ms = 10000
+max_retries = 3
+
+[penalty]
+# Devnet miner key (well-funded) pays penalty-tx fees and receives the sweep.
+fee_signer_key = "d00c06bfd800d27397002dca6fb0993d5ba6399b4238b2f29ee9deb97593d2bc"
+fee_rate_per_kb = 1000
+
+# secp256k1_blake160_sighash_all dep group — genesis tx[1] output 0 (dev chain).
+[penalty.secp256k1_lock_dep]
+tx_hash = "0xa314e2bd08b067c07c9b98814c6362d7ee1f89d14ee3ebefd473a18724efbfc6"
+index = 0
+dep_type = "dep_group"
+
+# CommitmentLock code cell — filled from the commitment tx at demo time.
+[penalty.commitment_lock_dep]
+tx_hash = "0x0000000000000000000000000000000000000000000000000000000000000000"
+index = 0
+dep_type = "code"

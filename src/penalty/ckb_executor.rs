@@ -81,6 +81,24 @@ impl CkbPenaltyExecutor {
             .build())
     }
 
+    /// Parse a JSON-RPC `CellDep` (as returned by `get_transaction`) to packed.
+    fn json_cell_dep(v: &serde_json::Value) -> Option<CellDep> {
+        let op = v.get("out_point")?;
+        let tx_hash = H256::from_trimmed_str(op.get("tx_hash")?.as_str()?.trim_start_matches("0x")).ok()?;
+        let index = u32::from_str_radix(op.get("index")?.as_str()?.trim_start_matches("0x"), 16).ok()?;
+        let dep_type = if v.get("dep_type").and_then(|d| d.as_str()) == Some("dep_group") {
+            DepType::DepGroup
+        } else {
+            DepType::Code
+        };
+        Some(
+            CellDep::new_builder()
+                .out_point(OutPoint::new(tx_hash.pack(), index))
+                .dep_type(ckb_types::packed::Byte::new(dep_type as u8))
+                .build(),
+        )
+    }
+
     /// Assemble the fully-signed penalty transaction.
     async fn build(&self, ctx: &BreachContext) -> anyhow::Result<TransactionView> {
         // 1. Penalty output + data (pre-computed by the node).
@@ -111,6 +129,17 @@ impl CkbPenaltyExecutor {
             ctx.commitment_index,
         );
 
+        // Auto-discover the commitment-lock code dep from the commitment tx
+        // itself (it necessarily referenced it), so we work on any deployment.
+        let commitment_deps: Vec<CellDep> = self
+            .ckb
+            .get_tx_cell_deps(&ctx.commitment_tx_hash)
+            .await
+            .unwrap_or_default()
+            .iter()
+            .filter_map(Self::json_cell_dep)
+            .collect();
+
         // 4. Change output back to the signer.
         let change_output = CellOutput::new_builder()
             .lock(self.signer_lock.clone())
@@ -138,8 +167,16 @@ impl CkbPenaltyExecutor {
             .lock(Some(Bytes::from(vec![0u8; 65])).pack())
             .build();
 
-        let tx = TransactionBuilder::default()
-            .cell_dep(Self::cell_dep(&self.cfg.commitment_lock_dep)?)
+        // Cell deps: the commitment tx's deps (commitment-lock code) if we found
+        // them, else the configured commitment_lock_dep; plus the secp dep for
+        // the fee input.
+        let mut builder = TransactionBuilder::default();
+        if commitment_deps.is_empty() {
+            builder = builder.cell_dep(Self::cell_dep(&self.cfg.commitment_lock_dep)?);
+        } else {
+            builder = builder.cell_deps(commitment_deps);
+        }
+        let tx = builder
             .cell_dep(Self::cell_dep(&self.cfg.secp256k1_lock_dep)?)
             .input(CellInput::new(commitment_out_point, 0))
             .input(CellInput::new(fee_out_point, 0))
