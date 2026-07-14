@@ -3,38 +3,50 @@
 The hackathon explicitly asks submissions to be clear about this. Kept honest and
 current as the build progresses.
 
-## Fully working
+## Fully working (verified by running it)
 
-- MIT Rust service that builds and runs.
-- Multi-tenant `sled` store, namespaced by `node_id`.
-- Liveness-attestation signer (secp256k1) with a passing verification test.
-- HTTP surface: `/health`, `/attestation`, `/channels`.
+- MIT Rust service that builds and runs; library + two binaries (`sentinel`,
+  `verify`).
+- **Watchtower RPC surface**: all seven methods accept and store what a Fiber
+  node streams. Verified with simulated node calls.
+- **Multi-tenancy**: bearer token → distinct tenant id; two nodes stay isolated;
+  survives restart. Verified.
+- **Accountability**:
+  - live liveness attestations bound to the CKB tip, served at `/attestation`;
+  - `verify` tool checks signature **and** freshness vs the live chain;
+  - demonstrated both **PROVEN LIVE** (exit 0) and **caught a stale/sleeping
+    tower** (exit 5);
+  - signed **receipts** issued on registration, bound to block height, at
+    `/receipts`.
+- **Operator surface**: live dashboard at `/` (screenshot in `dashboard.png`),
+  Prometheus `/metrics`, `/health`, `/channels`.
+- **Packaging**: multi-stage Dockerfile + docker-compose.
 
-## Scaffolded, not yet wired
+## Mocked / test-harnessed
 
-- The seven watchtower JSON-RPC methods (types declared; server wiring is Stage 2).
-- Watch receipts (signer written; issued on registration in Stage 4).
-- Chain watcher (interface only; real CKB polling + penalty is Stage 3).
+- End-to-end runs so far drive the tower with a **mock CKB** endpoint and
+  simulated node RPC calls. This exercises every code path but is not yet a live
+  Fiber devnet.
+- `rpc/types.rs` keeps opaque fields as raw JSON; they are locked to the exact
+  wire bytes once captured from a real node (Stage 1).
 
-## Mocked / placeholder
+## Not yet wired (final integration step)
 
-- `/attestation` currently signs a placeholder tip (`0x00`, height 0). Stage 3/4
-  replaces this with a live CKB tip poll.
-- `rpc/types.rs` opaque fields are `serde_json::Value` until Stage 1 captures the
-  real wire bytes and locks the structs.
+- **Breach → penalty against a live devnet.** The chain-watcher interface and the
+  breach flow are specified (`demo-runbook.md`, derived from Fiber's own
+  `e2e/watchtower/revocation` test), and `ckb` + the Fiber node are being built
+  to run it. Penalty *construction* uses Fiber's primitives via dependency, not
+  vendored source.
 
 ## Known limits / production gaps
 
-- **Penalty construction** relies on Fiber's `fiber-lib` primitives. Because the
-  upstream repo is unlicensed, this project links/drives rather than vendors that
-  code; the exact boundary is finalized in Stage 3.
-- Tower identity key is ephemeral (regenerated per run) until Stage 4 persists it.
-- No auth hardening on the RPC surface beyond the node's bearer token yet.
-- Single-tower only; no redundancy or failover (roadmap).
+- Tower identity key is ephemeral (regenerated per run) until persisted.
+- RPC auth is the node's bearer token; no additional hardening yet.
+- Single tower; no redundancy/failover.
 - Not audited. Do not use on mainnet funds.
 
-## Roadmap (post-hackathon)
+## Roadmap
 
-- TEE-attested penalty signing (PCR0-pinned enclave) so the tower can prove not
-  just that it is awake but that it runs the exact published binary.
-- P2P tower discovery and multi-tower redundancy.
+See [`SUBMISSION.md`](SUBMISSION.md#future-roadmap). Headline items: live-devnet
+penalty execution, persisted identity, TEE-attested penalty signing, P2P tower
+discovery + redundancy.

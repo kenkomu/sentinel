@@ -66,11 +66,21 @@ production-gap breakdown.
 
 | Stage | What | State |
 |------|------|-------|
-| 1 | Devnet + capture real node→tower wire payloads | in progress |
-| 2 | JSON-RPC watchtower server + multi-tenant store | scaffolded |
-| 3 | Chain watcher + penalty broadcast (breach demo) | planned |
-| 4 | Liveness attestations + receipts + verifier | scaffolded |
-| 5 | Dashboard, health, metrics, Docker | planned |
+| 2 | JSON-RPC watchtower server + multi-tenant store | ✅ done, verified |
+| 4 | Liveness attestations + receipts + verifier | ✅ done, verified |
+| 5 | Dashboard, health, metrics, Docker | ✅ done (VPS deploy pending) |
+| 1 | Devnet + capture real node→tower wire payloads | in progress (building `fnn`) |
+| 3 | Chain watcher + penalty broadcast (breach demo) | in progress |
+
+## Quick start
+
+```
+cargo run                      # tower on :8080 (console) + :23456 (watchtower RPC)
+cargo run --bin verify -- --tower http://localhost:8080 --ckb http://localhost:8114
+```
+
+Open `http://localhost:8080` for the watch console; `/attestation` is the public
+liveness proof.
 
 ## License
 
