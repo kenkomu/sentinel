@@ -144,7 +144,7 @@ async fn main() -> anyhow::Result<()> {
                         metrics.ckb_tip_height.set(tip.number as i64);
                         metrics.attestation_age.set(0);
                         height.store(tip.number, std::sync::atomic::Ordering::Relaxed);
-                        *latest.write().unwrap() = Some(att);
+                        *latest.write().unwrap_or_else(|p| p.into_inner()) = Some(att);
                     }
                     None => {
                         // CKB unreachable: do NOT emit a fresh attestation. A
@@ -152,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
                         // should act on — the tower cannot currently prove liveness.
                         tracing::warn!(ckb = %ckb_url, "CKB tip unavailable; withholding attestation");
                         metrics.live.set(0);
-                        if let Some(a) = latest.read().unwrap().as_ref() {
+                        if let Some(a) = latest.read().unwrap_or_else(|p| p.into_inner()).as_ref() {
                             metrics.attestation_age.set(unix_now().saturating_sub(a.timestamp) as i64);
                         }
                     }
@@ -215,7 +215,7 @@ async fn main() -> anyhow::Result<()> {
                 if breaches > 0 {
                     tracing::warn!(breaches, "scan: active breaches detected");
                 }
-                *scan.write().unwrap() = outcomes;
+                *scan.write().unwrap_or_else(|p| p.into_inner()) = outcomes;
             }
         });
     }
@@ -252,8 +252,35 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
         r = axum::serve(listener, app) => { r?; }
         _ = rpc_handle.stopped() => { tracing::warn!("RPC server stopped"); }
+        _ = shutdown_signal() => {
+            tracing::info!("shutdown signal received; flushing store and exiting");
+            if let Err(e) = store.flush() {
+                tracing::error!(error = %e, "store flush on shutdown failed");
+            }
+        }
     }
     Ok(())
+}
+
+/// Resolve on Ctrl-C or SIGTERM so the tower shuts down cleanly (flushing the
+/// store) instead of being killed mid-write.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let term = async {
+        if let Ok(mut s) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            s.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let term = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = term => {}
+    }
 }
 
 /// The operator watch-console (self-contained HTML, polls the JSON endpoints).
@@ -269,7 +296,7 @@ async fn health() -> Json<serde_json::Value> {
 /// tip. Returns 503 semantics (an explicit `live: false`) if none has been
 /// produced yet or CKB is unreachable — a client must treat that as "unproven".
 async fn attestation(State(s): State<AppState>) -> Json<serde_json::Value> {
-    match s.latest.read().unwrap().clone() {
+    match s.latest.read().unwrap_or_else(|p| p.into_inner()).clone() {
         Some(att) => {
             let age = unix_now().saturating_sub(att.timestamp);
             Json(serde_json::json!({ "live": true, "age_seconds": age, "attestation": att }))
@@ -295,7 +322,7 @@ async fn receipts(State(s): State<AppState>) -> Json<serde_json::Value> {
 
 /// Current per-channel scan verdicts, with breaches surfaced first.
 async fn breaches(State(s): State<AppState>) -> Json<serde_json::Value> {
-    let outcomes = s.scan.read().unwrap().clone();
+    let outcomes = s.scan.read().unwrap_or_else(|p| p.into_inner()).clone();
     let rows: Vec<serde_json::Value> = outcomes
         .iter()
         .map(|o| {
