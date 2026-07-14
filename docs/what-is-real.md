@@ -3,54 +3,57 @@
 The hackathon explicitly asks submissions to be clear about this. Kept honest and
 current as the build progresses.
 
-## Fully working (verified by running it)
+## Fully working — verified live against a Fiber devnet
 
-- MIT Rust service that builds and runs; library + two binaries (`sentinel`,
-  `verify`).
-- **Watchtower RPC surface**: all seven methods accept and store what a Fiber
-  node streams. Verified with simulated node calls.
-- **Multi-tenancy**: bearer token → distinct tenant id; two nodes stay isolated;
-  survives restart. Verified.
-- **Accountability**:
-  - live liveness attestations bound to the CKB tip, served at `/attestation`;
-  - `verify` tool checks signature **and** freshness vs the live chain;
-  - demonstrated both **PROVEN LIVE** (exit 0) and **caught a stale/sleeping
-    tower** (exit 5);
-  - signed **receipts** issued on registration, bound to block height, at
-    `/receipts`.
-- **Operator surface**: live dashboard at `/` (screenshot in `dashboard.png`),
-  Prometheus `/metrics`, `/health`, `/channels`.
-- **Packaging**: multi-stage Dockerfile + docker-compose.
+- **Node → tower ingestion.** A real devnet node (node 3), configured with
+  `standalone_watchtower_rpc_url` → Sentinel + `disable_built_in_watchtower`,
+  streamed its full watchtower lifecycle over JSON-RPC: `create_watch_channel`,
+  `update_revocation`, `create_preimage`, `remove_preimage`,
+  `update_local_settlement`, `update_pending_remote_settlement`. Real payloads:
+  `tests/fixtures/captured-devnet.log`.
+- **Channel identity derivation.** musig2 funding-lock derivation matches the
+  real funding cell exactly (found the live 599 CKB funding cell from just the
+  funding pubkeys, via the `locate` tool).
+- **Chain-state detection.** The scan loop correctly reports channel state
+  against the live chain (ChannelOpen for a live funding cell).
+- **Accountability.** Live attestations bound to the real CKB tip; the `verify`
+  tool proves both PROVEN LIVE and catches a stale/sleeping tower; signed
+  receipts on registration.
+- **Persistence & identity.** Multi-tenant sled store survives restart; tower
+  identity key persists across restarts.
+- **Operator surface.** Dashboard, `/metrics`, `/health`, `/channels`,
+  `/breaches`, `/receipts`.
 
-## Proven against a live Fiber devnet (Stage 1 ✅)
+## Fully working — verified by unit tests (14 passing)
 
-- A **real Fiber node** (devnet node 3), reconfigured with
-  `standalone_watchtower_rpc_url` → Sentinel and `disable_built_in_watchtower`,
-  streamed its full watchtower lifecycle to Sentinel over JSON-RPC:
-  `create_watch_channel`, `update_revocation` (×2), `create_preimage`,
-  `remove_preimage`, `update_local_settlement`, `update_pending_remote_settlement`.
-  Real captured payloads: `tests/fixtures/captured-devnet.log`.
-- Sentinel's `/attestation` bound to the **real CKB devnet tip** (verified live).
-- This capture also corrected the wire format: params arrive as a positional
-  array `[{...}]`; the store keys correctly off the inner object now.
+- Breach decision logic (breach / legitimate-close / unactionable).
+- Revocation-witness byte layout (vs real captured data).
+- Penalty output deserialization as a molecule `CellOutput` (vs real data).
+- Domain parsing (positional-array params), musig2 aggregation properties.
 
-## Not yet wired (the remaining hard part)
+## Built, pending the final live run
 
-- **Breach → penalty broadcast.** Sentinel now holds the real `update_revocation`
-  data needed to build a penalty, and can detect the stale-commitment broadcast.
-  Constructing and broadcasting the penalty transaction itself (using Fiber's
-  cell/commitment primitives) is the remaining cryptographic integration —
-  see `demo-runbook.md` for the exact breach trigger and win condition.
+- **Breach → penalty broadcast end-to-end.** Every component is built and wired:
+  the detector raises a Breach, the executor assembles the sweep transaction
+  (pre-computed penalty output + revocation witness for the commitment input),
+  collects a fee cell, signs it with CKB secp256k1-blake160 sighash-all, and
+  broadcasts. The live breach run needs a **debug** `fnn` because Fiber's breach
+  trigger (`submit_commitment_transaction`) is `#[cfg(debug_assertions)]`;
+  that build is the last step. Repro: `scripts/full-demo.sh`.
+- **The one honest risk:** CKB sighash correctness is only fully confirmed by an
+  accepted on-chain transaction. The implementation is reviewed against the spec
+  and the witness/tx assembly is unit-tested, but the live broadcast is the
+  final proof.
 
 ## Known limits / production gaps
 
-- Tower identity key is ephemeral (regenerated per run) until persisted.
-- RPC auth is the node's bearer token; no additional hardening yet.
+- Fee is a conservative flat value, not size-computed (negligible over-pay).
+- RPC auth is the node's bearer token → tenant; no additional hardening yet.
 - Single tower; no redundancy/failover.
 - Not audited. Do not use on mainnet funds.
 
 ## Roadmap
 
-See [`SUBMISSION.md`](SUBMISSION.md#future-roadmap). Headline items: live-devnet
-penalty execution, persisted identity, TEE-attested penalty signing, P2P tower
-discovery + redundancy.
+TEE-attested penalty signing (PCR0-pinned enclave), P2P tower discovery +
+multi-tower redundancy, size-based fee estimation, wallet SDK for auto-register
++ periodic verify. See `SUBMISSION.md`.
