@@ -32,6 +32,7 @@ pub struct Store {
     db: sled::Db,
     channels: sled::Tree,
     preimages: sled::Tree,
+    receipts: sled::Tree,
 }
 
 fn key(node_id: &str, channel_id: &str) -> Vec<u8> {
@@ -50,7 +51,8 @@ impl Store {
         let db = sled::open(path)?;
         let channels = db.open_tree("channels")?;
         let preimages = db.open_tree("preimages")?;
-        Ok(Self { db, channels, preimages })
+        let receipts = db.open_tree("receipts")?;
+        Ok(Self { db, channels, preimages, receipts })
     }
 
     /// Store a raw params payload under a named part for a channel, merging into
@@ -92,6 +94,26 @@ impl Store {
     pub fn remove_preimage(&self, node_id: &str, payment_hash: &str) -> Result<()> {
         self.preimages.remove(key(node_id, payment_hash))?;
         Ok(())
+    }
+
+    pub fn insert_receipt(
+        &self,
+        node_id: &str,
+        channel_id: &str,
+        receipt: &crate::attest::WatchReceipt,
+    ) -> Result<()> {
+        self.receipts
+            .insert(key(node_id, channel_id), serde_json::to_vec(receipt)?)?;
+        Ok(())
+    }
+
+    pub fn all_receipts(&self) -> Result<Vec<crate::attest::WatchReceipt>> {
+        let mut out = Vec::new();
+        for item in self.receipts.iter() {
+            let (_, v) = item?;
+            out.push(serde_json::from_slice(&v)?);
+        }
+        Ok(out)
     }
 
     /// All channels currently under watch — used by the chain watcher's periodic

@@ -84,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
 
     let latest: LatestAttestation = Arc::new(RwLock::new(None));
     let metrics = Metrics::new();
+    let height = Arc::new(std::sync::atomic::AtomicU64::new(0));
 
     // Background accountability loop: bind each attestation to the live CKB tip.
     let ckb = CkbClient::new(args.ckb_rpc_url.clone());
@@ -92,6 +93,7 @@ async fn main() -> anyhow::Result<()> {
         let store = store.clone();
         let latest = latest.clone();
         let metrics = metrics.clone();
+        let height = height.clone();
         let interval = args.attest_interval.max(1);
         let ckb_url = args.ckb_rpc_url.clone();
         tokio::spawn(async move {
@@ -113,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
                         metrics.live.set(1);
                         metrics.ckb_tip_height.set(tip.number as i64);
                         metrics.attestation_age.set(0);
+                        height.store(tip.number, std::sync::atomic::Ordering::Relaxed);
                         *latest.write().unwrap() = Some(att);
                     }
                     None => {
@@ -139,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
 
     // JSON-RPC watchtower surface — what a Fiber node's
     // `standalone_watchtower_rpc_url` points at.
-    let handler = rpc::WatchtowerRpc::new(store.clone(), attestor.clone());
+    let handler = rpc::WatchtowerRpc::new(store.clone(), attestor.clone(), height.clone());
     let rpc_addr: std::net::SocketAddr = format!("0.0.0.0:{}", args.rpc_port).parse()?;
     let (bound, rpc_handle) = rpc::server::serve(handler, rpc_addr).await?;
     tracing::info!(%bound, "JSON-RPC watchtower surface up (7 methods, capture+store)");
@@ -149,6 +152,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/attestation", get(attestation))
         .route("/channels", get(channels))
+        .route("/receipts", get(receipts))
         .route("/metrics", get(metrics_endpoint))
         .with_state(state);
 
@@ -192,6 +196,12 @@ async fn attestation(State(s): State<AppState>) -> Json<serde_json::Value> {
 async fn channels(State(s): State<AppState>) -> Json<serde_json::Value> {
     let list = s.store.all_channels().unwrap_or_default();
     Json(serde_json::json!({ "count": list.len(), "channels": list }))
+}
+
+/// Signed receipts the tower issued when it accepted each channel.
+async fn receipts(State(s): State<AppState>) -> Json<serde_json::Value> {
+    let list = s.store.all_receipts().unwrap_or_default();
+    Json(serde_json::json!({ "count": list.len(), "receipts": list }))
 }
 
 /// Prometheus exposition endpoint.

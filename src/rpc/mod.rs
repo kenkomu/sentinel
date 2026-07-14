@@ -6,6 +6,7 @@ use crate::attest::Attestor;
 use crate::error::Result;
 use crate::store::Store;
 use serde_json::Value;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 /// Shared handler state for the RPC methods. Wired into a `jsonrpsee` server
@@ -15,6 +16,9 @@ use std::sync::Arc;
 pub struct WatchtowerRpc {
     pub store: Store,
     pub attestor: Arc<Attestor>,
+    /// Latest CKB tip height the tower has seen, updated by the attestation
+    /// loop. Used to stamp registration receipts with "watching since block N".
+    pub height: Arc<AtomicU64>,
 }
 
 /// Pull a string field out of a raw params object, tolerating both
@@ -26,13 +30,27 @@ fn field(raw: &Value, name: &str) -> Option<String> {
 }
 
 impl WatchtowerRpc {
-    pub fn new(store: Store, attestor: Arc<Attestor>) -> Self {
-        Self { store, attestor }
+    pub fn new(store: Store, attestor: Arc<Attestor>, height: Arc<AtomicU64>) -> Self {
+        Self { store, attestor, height }
     }
 
     pub fn store_create(&self, node_id: &str, raw: Value) -> Result<()> {
         let channel_id = field(&raw, "channel_id").unwrap_or_else(|| "unknown".into());
-        self.store.insert_raw(node_id, &channel_id, "create", raw)
+        self.store.insert_raw(node_id, &channel_id, "create", raw)?;
+        // Issue a signed receipt: proof the tower accepted responsibility for
+        // this channel from the current block height. The client can later use
+        // it to hold the tower to account.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let receipt = self.attestor.issue_receipt(
+            node_id,
+            &channel_id,
+            self.height.load(Ordering::Relaxed),
+            now,
+        );
+        self.store.insert_receipt(node_id, &channel_id, &receipt)
     }
 
     pub fn store_remove(&self, node_id: &str, raw: &Value) -> Result<()> {
