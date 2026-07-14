@@ -248,6 +248,26 @@ fn blake160(data: &[u8]) -> [u8; 20] {
     out
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ckb_types::prelude::*;
+
+    // The exact penalty `output` a live devnet node handed the tower.
+    const REAL_OUTPUT: &str = "0x61000000100000001800000061000000387551f20d000000490000001000000030000000310000009bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce80114000000639b4a957ef467ddf92a2dcb53e94b3aa61b2382";
+
+    #[test]
+    fn real_penalty_output_deserializes_as_cell_output() {
+        let bytes = hex::decode(REAL_OUTPUT.trim_start_matches("0x")).unwrap();
+        let out = CellOutput::from_slice(&bytes).expect("real penalty output must parse as CellOutput");
+        // It pays to the secp256k1 sighash lock (the victim's own key).
+        assert_eq!(out.lock().code_hash().raw_data().as_ref(), &SIGHASH_CODE_HASH);
+        // Capacity is set (the swept commitment balance).
+        let cap: u64 = out.capacity().unpack();
+        assert!(cap > 0, "penalty output must carry the swept capacity");
+    }
+}
+
 #[async_trait]
 impl PenaltyExecutor for CkbPenaltyExecutor {
     async fn punish(&self, ctx: &BreachContext) -> PenaltyOutcome {
