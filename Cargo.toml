@@ -57,6 +57,7 @@ prometheus = "0.13"
 toml = "0.8"
 thiserror = "1"
 anyhow = "1"
+async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]

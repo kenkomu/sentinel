@@ -11,6 +11,7 @@ pub mod detector;
 pub mod domain;
 pub mod error;
 pub mod metrics;
+pub mod penalty;
 pub mod rpc;
 pub mod store;
 pub mod watch;
