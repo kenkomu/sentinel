@@ -10,6 +10,7 @@ pub mod config;
 pub mod detector;
 pub mod domain;
 pub mod error;
+pub mod identity;
 pub mod metrics;
 pub mod penalty;
 pub mod rpc;

@@ -7,7 +7,7 @@
 //!     liveness attestation, receipts, and the operator dashboard.
 
 use axum::{extract::State, routing::get, Json, Router};
-use sentinel::attest::{self, Attestor, LivenessAttestation};
+use sentinel::attest::{Attestor, LivenessAttestation};
 use sentinel::ckb::CkbClient;
 use sentinel::metrics::Metrics;
 use sentinel::watch::{ChainWatcher, ScanOutcome, WatchParams};
@@ -15,7 +15,6 @@ use sentinel::detector::Verdict;
 use sentinel::rpc;
 use sentinel::store;
 use clap::Parser;
-use secp256k1::{rand::rngs::OsRng, Secp256k1};
 use std::sync::{Arc, RwLock};
 use store::Store;
 
@@ -101,10 +100,10 @@ async fn main() -> anyhow::Result<()> {
 
     let store = Store::open(&args.data_dir).map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
-    // Ephemeral identity key for now; persisting it (stable tower identity across
-    // restarts) is a small follow-up.
-    let secp = Secp256k1::new();
-    let (sk, _pk) = secp.generate_keypair(&mut OsRng);
+    // Stable tower identity: loaded from the data dir, generated on first run,
+    // so clients keep verifying against the same public key across restarts.
+    let sk = sentinel::identity::load_or_create(&args.data_dir)
+        .map_err(|e| anyhow::anyhow!("tower identity: {e}"))?;
     let attestor = Arc::new(Attestor::new(sk));
 
     tracing::info!(tower_pubkey = %attestor.pubkey_hex(), "Sentinel identity");

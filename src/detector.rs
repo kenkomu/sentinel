@@ -16,7 +16,7 @@
 //! is provably an old state — the counterparty is trying to roll back.
 
 use crate::channel_id::{blake160, commitment_x_only_pubkey, funding_lock_args};
-use crate::ckb::{CkbClient, JsonScript};
+use crate::ckb::JsonScript;
 use crate::domain::{parse_hex_bytes, CreateWatchChannel, RevocationData};
 
 /// The verdict for one channel on one scan.
