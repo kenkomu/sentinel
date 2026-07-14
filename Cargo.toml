@@ -29,6 +29,13 @@ serde_json = "1"
 # CKB RPC client (rustls to avoid a system OpenSSL dependency)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+# CKB primitives for penalty-transaction assembly. ckb-types gives molecule
+# packed types (CellOutput, Transaction, Script) so we can deserialize the
+# pre-computed penalty output Fiber hands us and build the revocation tx.
+ckb-types = "=1.1.2"
+ckb-hash = "=1.1.1"
+ckb-jsonrpc-types = "=1.1.2"
+
 # Embedded storage for watched channels, revocation data, and preimages.
 sled = "0.34"
 
@@ -37,12 +44,17 @@ secp256k1 = { version = "0.29", features = ["rand", "recovery"] }
 sha2 = "0.10"
 hex = "0.4"
 
+# musig2 key aggregation — matches Fiber's version so the aggregated funding
+# pubkey (and thus the funding/commitment lock identity) is computed identically.
+musig2 = "=0.2.4"
+
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 prometheus = "0.13"
 
 # Config + errors
+toml = "0.8"
 thiserror = "1"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

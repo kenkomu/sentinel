@@ -4,7 +4,10 @@
 //! client binary.
 
 pub mod attest;
+pub mod channel_id;
 pub mod ckb;
+pub mod config;
+pub mod domain;
 pub mod error;
 pub mod metrics;
 pub mod rpc;
