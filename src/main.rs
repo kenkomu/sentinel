@@ -57,6 +57,11 @@ struct Args {
     /// Blocks of confirmation before acting on a detected spend (reorg safety).
     #[arg(long, default_value_t = 3)]
     reorg_safety_blocks: u64,
+
+    /// Optional TOML config enabling active defence (penalty broadcast). Without
+    /// it, the tower runs in detection/alerting-only mode.
+    #[arg(long)]
+    config: Option<String>,
 }
 
 /// The most recently produced liveness attestation, refreshed by the background
@@ -156,10 +161,22 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Optional penalty config enables active defence.
+    let penalty_cfg = args
+        .config
+        .as_ref()
+        .and_then(|p| sentinel::config::Config::load(Some(std::path::Path::new(p))).ok())
+        .and_then(|c| c.penalty);
+    if penalty_cfg.is_some() {
+        tracing::info!("active defence ENABLED — breaches will be punished on-chain");
+    } else {
+        tracing::info!("detection-only mode — breaches detected and alerted, not punished");
+    }
+
     // Background chain-scan loop: detect breaches across all watched channels.
     let scan: LatestScan = Arc::new(RwLock::new(Vec::new()));
     {
-        let watcher = ChainWatcher::new(
+        let mut watcher = ChainWatcher::new(
             store.clone(),
             CkbClient::with_opts(args.ckb_rpc_url.clone(), 10_000, 3),
             WatchParams {
@@ -168,6 +185,15 @@ async fn main() -> anyhow::Result<()> {
                 reorg_safety_blocks: args.reorg_safety_blocks,
             },
         );
+        if let Some(pc) = penalty_cfg.clone() {
+            match sentinel::penalty::ckb_executor::CkbPenaltyExecutor::new(
+                CkbClient::with_opts(args.ckb_rpc_url.clone(), 10_000, 3),
+                pc,
+            ) {
+                Ok(exec) => watcher = watcher.with_executor(Arc::new(exec)),
+                Err(e) => tracing::error!(error = %e, "failed to init penalty executor; staying detection-only"),
+            }
+        }
         let scan = scan.clone();
         let height = height.clone();
         let metrics = metrics.clone();

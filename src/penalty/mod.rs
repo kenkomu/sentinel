@@ -17,6 +17,7 @@
 //!     ‖ commitment_number BE (8) ‖ x_only_aggregated_pubkey (32)
 //!     ‖ aggregated_signature (64)
 
+pub mod ckb_executor;
 pub mod witness;
 
 use crate::domain::RevocationData;

@@ -11,8 +11,10 @@
 //!     harmless (the executor checks the commitment cell is still live first).
 
 use crate::ckb::CkbClient;
-use crate::config::PenaltyConfig;
+use crate::channel_id::commitment_x_only_pubkey;
 use crate::detector::{self, Verdict};
+use crate::domain::parse_hex_bytes;
+use crate::penalty::{BreachContext, PenaltyExecutor, PenaltyOutcome};
 use crate::store::Store;
 use std::sync::Arc;
 
@@ -38,13 +40,19 @@ pub struct ChainWatcher {
     pub store: Store,
     pub ckb: CkbClient,
     pub params: WatchParams,
-    /// When present, the watcher will attempt to punish breaches.
-    pub penalty: Option<Arc<PenaltyConfig>>,
+    /// When present, the watcher punishes breaches; otherwise it is a
+    /// detection/alerting-only tower.
+    pub executor: Option<Arc<dyn PenaltyExecutor>>,
 }
 
 impl ChainWatcher {
     pub fn new(store: Store, ckb: CkbClient, params: WatchParams) -> Self {
-        Self { store, ckb, params, penalty: None }
+        Self { store, ckb, params, executor: None }
+    }
+
+    pub fn with_executor(mut self, executor: Arc<dyn PenaltyExecutor>) -> Self {
+        self.executor = Some(executor);
+        self
     }
 
     /// Scan every watched channel once, returning per-channel outcomes.
@@ -126,8 +134,12 @@ impl ChainWatcher {
             &commitment_args,
         );
 
-        if let Verdict::Breach { .. } = &verdict {
+        if let Verdict::Breach { commitment_index, .. } = &verdict {
             tracing::warn!(channel = %create.channel_id, node = %wc.node_id, "BREACH detected");
+            if let (Some(executor), Some(revocation)) = (self.executor.as_ref(), revocation.as_ref()) {
+                self.punish(&create, revocation, &spend.tx_hash, *commitment_index, executor.as_ref())
+                    .await;
+            }
         }
 
         Some(ScanOutcome {
@@ -135,5 +147,45 @@ impl ChainWatcher {
             node_id: wc.node_id.clone(),
             verdict,
         })
+    }
+
+    /// Assemble the breach context and hand it to the executor.
+    async fn punish(
+        &self,
+        create: &crate::domain::CreateWatchChannel,
+        revocation: &crate::domain::RevocationData,
+        commitment_tx_hash: &str,
+        commitment_index: u32,
+        executor: &dyn PenaltyExecutor,
+    ) {
+        let (Some(local), Some(remote)) = (
+            parse_hex_bytes(&create.local_funding_pubkey),
+            parse_hex_bytes(&create.remote_funding_pubkey),
+        ) else {
+            tracing::error!(channel = %create.channel_id, "punish: unparseable funding pubkeys");
+            return;
+        };
+        let Some(agg) = commitment_x_only_pubkey(&local, &remote) else {
+            tracing::error!(channel = %create.channel_id, "punish: musig2 aggregation failed");
+            return;
+        };
+        let ctx = BreachContext {
+            channel_id: create.channel_id.clone(),
+            commitment_tx_hash: commitment_tx_hash.to_string(),
+            commitment_index,
+            revocation: revocation.clone(),
+            x_only_aggregated_pubkey: agg,
+        };
+        match executor.punish(&ctx).await {
+            PenaltyOutcome::Broadcast(h) => {
+                tracing::warn!(channel = %create.channel_id, penalty_tx = %h, "PENALTY BROADCAST — cheater swept")
+            }
+            PenaltyOutcome::AlreadyResolved => {
+                tracing::info!(channel = %create.channel_id, "penalty: commitment already resolved")
+            }
+            PenaltyOutcome::Failed(e) => {
+                tracing::error!(channel = %create.channel_id, error = %e, "penalty FAILED")
+            }
+        }
     }
 }
