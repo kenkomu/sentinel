@@ -22,21 +22,25 @@ current as the build progresses.
   Prometheus `/metrics`, `/health`, `/channels`.
 - **Packaging**: multi-stage Dockerfile + docker-compose.
 
-## Mocked / test-harnessed
+## Proven against a live Fiber devnet (Stage 1 ✅)
 
-- End-to-end runs so far drive the tower with a **mock CKB** endpoint and
-  simulated node RPC calls. This exercises every code path but is not yet a live
-  Fiber devnet.
-- `rpc/types.rs` keeps opaque fields as raw JSON; they are locked to the exact
-  wire bytes once captured from a real node (Stage 1).
+- A **real Fiber node** (devnet node 3), reconfigured with
+  `standalone_watchtower_rpc_url` → Sentinel and `disable_built_in_watchtower`,
+  streamed its full watchtower lifecycle to Sentinel over JSON-RPC:
+  `create_watch_channel`, `update_revocation` (×2), `create_preimage`,
+  `remove_preimage`, `update_local_settlement`, `update_pending_remote_settlement`.
+  Real captured payloads: `tests/fixtures/captured-devnet.log`.
+- Sentinel's `/attestation` bound to the **real CKB devnet tip** (verified live).
+- This capture also corrected the wire format: params arrive as a positional
+  array `[{...}]`; the store keys correctly off the inner object now.
 
-## Not yet wired (final integration step)
+## Not yet wired (the remaining hard part)
 
-- **Breach → penalty against a live devnet.** The chain-watcher interface and the
-  breach flow are specified (`demo-runbook.md`, derived from Fiber's own
-  `e2e/watchtower/revocation` test), and `ckb` + the Fiber node are being built
-  to run it. Penalty *construction* uses Fiber's primitives via dependency, not
-  vendored source.
+- **Breach → penalty broadcast.** Sentinel now holds the real `update_revocation`
+  data needed to build a penalty, and can detect the stale-commitment broadcast.
+  Constructing and broadcasting the penalty transaction itself (using Fiber's
+  cell/commitment primitives) is the remaining cryptographic integration —
+  see `demo-runbook.md` for the exact breach trigger and win condition.
 
 ## Known limits / production gaps
 

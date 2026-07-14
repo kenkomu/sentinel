@@ -21,12 +21,18 @@ pub struct WatchtowerRpc {
     pub height: Arc<AtomicU64>,
 }
 
-/// Pull a string field out of a raw params object, tolerating both
-/// `{"field": "x"}` and a positional `["x", ...]` shape until Stage 1 locks it.
+/// Pull a string field out of a raw params payload.
+///
+/// A Fiber node sends watchtower params as a **positional array** whose first
+/// element is the params object, e.g. `[{"channel_id": "0x..", ...}]` (confirmed
+/// against real devnet capture — see tests/fixtures/captured-devnet.log). We
+/// unwrap the array, then read the named field.
 fn field(raw: &Value, name: &str) -> Option<String> {
-    raw.get(name)
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+    let obj = match raw {
+        Value::Array(items) => items.first()?,
+        other => other,
+    };
+    obj.get(name).and_then(|v| v.as_str()).map(|s| s.to_string())
 }
 
 impl WatchtowerRpc {
