@@ -26,6 +26,9 @@ tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# CKB RPC client (rustls to avoid a system OpenSSL dependency)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
 # Embedded storage for watched channels, revocation data, and preimages.
 sled = "0.34"
 

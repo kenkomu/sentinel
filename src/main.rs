@@ -2,21 +2,18 @@
 //!
 //! Two servers run side by side:
 //!   * a JSON-RPC server on `--rpc-port` that a Fiber node points its
-//!     `standalone_watchtower_rpc_url` at (Stage 2), and
+//!     `standalone_watchtower_rpc_url` at, and
 //!   * an HTTP server on `--http-port` serving health, metrics, the public
-//!     liveness attestation, and the operator dashboard.
+//!     liveness attestation, receipts, and the operator dashboard.
 
-mod attest;
-mod error;
-mod rpc;
-mod store;
-mod watch;
-
-use attest::Attestor;
 use axum::{extract::State, routing::get, Json, Router};
+use sentinel::attest::{self, Attestor, LivenessAttestation};
+use sentinel::ckb::CkbClient;
+use sentinel::rpc;
+use sentinel::store;
 use clap::Parser;
 use secp256k1::{rand::rngs::OsRng, Secp256k1};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use store::Store;
 
 #[derive(Parser, Debug)]
@@ -34,15 +31,31 @@ struct Args {
     #[arg(long, default_value_t = 8080)]
     http_port: u16,
 
-    /// CKB node RPC the chain watcher polls.
+    /// CKB node RPC used for liveness attestations and (later) the chain watcher.
     #[arg(long, default_value = "http://127.0.0.1:8114")]
     ckb_rpc_url: String,
+
+    /// Seconds between liveness attestations.
+    #[arg(long, default_value_t = 10)]
+    attest_interval: u64,
 }
+
+/// The most recently produced liveness attestation, refreshed by the background
+/// loop and served verbatim at `/attestation`.
+type LatestAttestation = Arc<RwLock<Option<LivenessAttestation>>>;
 
 #[derive(Clone)]
 struct AppState {
     store: Store,
     attestor: Arc<Attestor>,
+    latest: LatestAttestation,
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[tokio::main]
@@ -58,8 +71,8 @@ async fn main() -> anyhow::Result<()> {
 
     let store = Store::open(&args.data_dir).map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
-    // Stage 1: ephemeral identity key. Stage 4 persists this so the tower's
-    // public identity is stable across restarts.
+    // Ephemeral identity key for now; persisting it (stable tower identity across
+    // restarts) is a small follow-up.
     let secp = Secp256k1::new();
     let (sk, _pk) = secp.generate_keypair(&mut OsRng);
     let attestor = Arc::new(Attestor::new(sk));
@@ -67,9 +80,45 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(tower_pubkey = %attestor.pubkey_hex(), "Sentinel identity");
     tracing::info!(channels = store.channel_count(), "loaded store");
 
+    let latest: LatestAttestation = Arc::new(RwLock::new(None));
+
+    // Background accountability loop: bind each attestation to the live CKB tip.
+    let ckb = CkbClient::new(args.ckb_rpc_url.clone());
+    {
+        let attestor = attestor.clone();
+        let store = store.clone();
+        let latest = latest.clone();
+        let interval = args.attest_interval.max(1);
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(interval));
+            loop {
+                tick.tick().await;
+                match ckb.tip().await {
+                    Some(tip) => {
+                        let att = attestor.attest_liveness(
+                            &tip.hash,
+                            tip.number,
+                            store.channel_count(),
+                            unix_now(),
+                        );
+                        tracing::debug!(height = tip.number, channels = att.channels_watched, "attested");
+                        *latest.write().unwrap() = Some(att);
+                    }
+                    None => {
+                        // CKB unreachable: do NOT emit a fresh attestation. A
+                        // stale/absent attestation is exactly the signal a client
+                        // should act on — the tower cannot currently prove liveness.
+                        tracing::warn!(ckb = %args.ckb_rpc_url, "CKB tip unavailable; withholding attestation");
+                    }
+                }
+            }
+        });
+    }
+
     let state = AppState {
         store: store.clone(),
         attestor: attestor.clone(),
+        latest: latest.clone(),
     };
 
     // JSON-RPC watchtower surface — what a Fiber node's
@@ -87,9 +136,8 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = format!("0.0.0.0:{}", args.http_port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!(%addr, ckb = %args.ckb_rpc_url, "HTTP surface up (health, attestation, channels)");
+    tracing::info!(%addr, "HTTP surface up (health, attestation, channels)");
 
-    // Serve HTTP; keep the RPC server alive alongside it.
     tokio::select! {
         r = axum::serve(listener, app) => { r?; }
         _ = rpc_handle.stopped() => { tracing::warn!("RPC server stopped"); }
@@ -101,17 +149,21 @@ async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok", "service": "sentinel" }))
 }
 
-/// Public proof the tower is awake. In Stage 3 the tip fields come from a live
-/// CKB poll; here they are placeholders so the endpoint shape is real now.
-async fn attestation(State(s): State<AppState>) -> Json<attest::LivenessAttestation> {
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let att = s
-        .attestor
-        .attest_liveness("0x00", 0, s.store.channel_count(), ts);
-    Json(att)
+/// Public proof the tower is awake: the latest attestation bound to the live CKB
+/// tip. Returns 503 semantics (an explicit `live: false`) if none has been
+/// produced yet or CKB is unreachable — a client must treat that as "unproven".
+async fn attestation(State(s): State<AppState>) -> Json<serde_json::Value> {
+    match s.latest.read().unwrap().clone() {
+        Some(att) => {
+            let age = unix_now().saturating_sub(att.timestamp);
+            Json(serde_json::json!({ "live": true, "age_seconds": age, "attestation": att }))
+        }
+        None => Json(serde_json::json!({
+            "live": false,
+            "reason": "no attestation yet (CKB unreachable or tower just started)",
+            "tower_pubkey": s.attestor.pubkey_hex(),
+        })),
+    }
 }
 
 async fn channels(State(s): State<AppState>) -> Json<serde_json::Value> {

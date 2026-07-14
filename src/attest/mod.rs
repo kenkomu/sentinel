@@ -123,6 +123,28 @@ impl Attestor {
     }
 }
 
+/// Verify a liveness attestation's signature against the public key it carries.
+///
+/// This proves the attestation was produced by the holder of the tower's key and
+/// has not been tampered with. It does NOT prove freshness — the caller must
+/// separately check `ckb_tip_height` against a real CKB node (a signature over a
+/// stale tip is still a valid signature). That two-part check — signature here,
+/// freshness against the chain — is what makes a sleeping tower detectable.
+pub fn verify_liveness(att: &LivenessAttestation) -> Result<bool, String> {
+    let secp = Secp256k1::verification_only();
+    let pk_bytes = hex::decode(&att.tower_pubkey).map_err(|e| e.to_string())?;
+    let pk = PublicKey::from_slice(&pk_bytes).map_err(|e| e.to_string())?;
+    let sig_bytes = hex::decode(&att.signature).map_err(|e| e.to_string())?;
+    let sig = secp256k1::ecdsa::Signature::from_compact(&sig_bytes).map_err(|e| e.to_string())?;
+    let msg = Attestor::digest(&[
+        att.ckb_tip_hash.as_bytes(),
+        &att.ckb_tip_height.to_be_bytes(),
+        &(att.channels_watched as u64).to_be_bytes(),
+        &att.timestamp.to_be_bytes(),
+    ]);
+    Ok(secp.verify_ecdsa(&msg, &sig, &pk).is_ok())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
