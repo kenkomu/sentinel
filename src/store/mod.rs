@@ -4,21 +4,25 @@
 //! able to protect many independent Fiber nodes at once. Backed by `sled` (a
 //! pure-Rust embedded KV store) so the tower is a single self-contained binary
 //! with no external database to operate.
+//!
+//! Stage 1 stores each channel's incoming payloads as raw JSON "parts"
+//! (registration, latest revocation, settlement data). Once the wire format is
+//! captured and locked, typed accessors are layered on top without changing the
+//! on-disk shape.
 
 use crate::error::Result;
-use crate::rpc::types::*;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-/// Everything the tower persists about one channel it is guarding.
+/// Everything the tower persists about one channel it is guarding. `parts` holds
+/// the raw params of each method the node called for this channel, keyed by a
+/// short part name: "create", "revocation", "local_settlement",
+/// "pending_remote_settlement".
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WatchedChannel {
     pub node_id: String,
     pub channel_id: String,
-    pub create_params: CreateWatchChannelParams,
-    /// Latest revocation data — the secret used to build the penalty tx.
-    pub revocation: Option<UpdateRevocationParams>,
-    pub local_settlement: Option<UpdateLocalSettlementParams>,
-    pub pending_remote_settlement: Option<UpdatePendingRemoteSettlementParams>,
+    pub parts: BTreeMap<String, serde_json::Value>,
     /// Wall-clock unix seconds of the last update, for liveness accounting.
     pub updated_at: u64,
 }
@@ -49,65 +53,33 @@ impl Store {
         Ok(Self { db, channels, preimages })
     }
 
-    pub fn insert_watch_channel(&self, node_id: &str, p: CreateWatchChannelParams) -> Result<()> {
-        let wc = WatchedChannel {
-            node_id: node_id.to_string(),
-            channel_id: p.channel_id.clone(),
-            create_params: p.clone(),
-            revocation: None,
-            local_settlement: None,
-            pending_remote_settlement: None,
-            updated_at: now(),
-        };
-        self.channels
-            .insert(key(node_id, &p.channel_id), serde_json::to_vec(&wc)?)?;
-        Ok(())
-    }
-
-    pub fn remove_watch_channel(&self, node_id: &str, channel_id: &str) -> Result<()> {
-        self.channels.remove(key(node_id, channel_id))?;
-        Ok(())
-    }
-
-    pub fn update_revocation(&self, node_id: &str, p: UpdateRevocationParams) -> Result<()> {
-        self.mutate(node_id, &p.channel_id.clone(), |wc| {
-            wc.revocation = Some(p);
-        })
-    }
-
-    pub fn update_local_settlement(
-        &self,
-        node_id: &str,
-        p: UpdateLocalSettlementParams,
-    ) -> Result<()> {
-        self.mutate(node_id, &p.channel_id.clone(), |wc| {
-            wc.local_settlement = Some(p);
-        })
-    }
-
-    pub fn update_pending_remote_settlement(
-        &self,
-        node_id: &str,
-        p: UpdatePendingRemoteSettlementParams,
-    ) -> Result<()> {
-        self.mutate(node_id, &p.channel_id.clone(), |wc| {
-            wc.pending_remote_settlement = Some(p);
-        })
-    }
-
-    fn mutate<F: FnOnce(&mut WatchedChannel)>(
+    /// Store a raw params payload under a named part for a channel, merging into
+    /// the existing record so one channel keeps its full picture in one row.
+    pub fn insert_raw(
         &self,
         node_id: &str,
         channel_id: &str,
-        f: F,
+        part: &str,
+        raw: serde_json::Value,
     ) -> Result<()> {
         let k = key(node_id, channel_id);
-        if let Some(bytes) = self.channels.get(&k)? {
-            let mut wc: WatchedChannel = serde_json::from_slice(&bytes)?;
-            f(&mut wc);
-            wc.updated_at = now();
-            self.channels.insert(k, serde_json::to_vec(&wc)?)?;
-        }
+        let mut wc: WatchedChannel = match self.channels.get(&k)? {
+            Some(bytes) => serde_json::from_slice(&bytes)?,
+            None => WatchedChannel {
+                node_id: node_id.to_string(),
+                channel_id: channel_id.to_string(),
+                parts: BTreeMap::new(),
+                updated_at: 0,
+            },
+        };
+        wc.parts.insert(part.to_string(), raw);
+        wc.updated_at = now();
+        self.channels.insert(k, serde_json::to_vec(&wc)?)?;
+        Ok(())
+    }
+
+    pub fn remove_channel(&self, node_id: &str, channel_id: &str) -> Result<()> {
+        self.channels.remove(key(node_id, channel_id))?;
         Ok(())
     }
 

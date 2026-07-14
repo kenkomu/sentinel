@@ -72,6 +72,13 @@ async fn main() -> anyhow::Result<()> {
         attestor: attestor.clone(),
     };
 
+    // JSON-RPC watchtower surface — what a Fiber node's
+    // `standalone_watchtower_rpc_url` points at.
+    let handler = rpc::WatchtowerRpc::new(store.clone(), attestor.clone());
+    let rpc_addr: std::net::SocketAddr = format!("0.0.0.0:{}", args.rpc_port).parse()?;
+    let (bound, rpc_handle) = rpc::server::serve(handler, rpc_addr).await?;
+    tracing::info!(%bound, "JSON-RPC watchtower surface up (7 methods, capture+store)");
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/attestation", get(attestation))
@@ -80,14 +87,13 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = format!("0.0.0.0:{}", args.http_port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!(%addr, "HTTP surface up (health, attestation, channels)");
-    tracing::info!(
-        rpc_port = args.rpc_port,
-        ckb = %args.ckb_rpc_url,
-        "JSON-RPC watchtower surface + chain watcher: wired in Stage 2/3"
-    );
+    tracing::info!(%addr, ckb = %args.ckb_rpc_url, "HTTP surface up (health, attestation, channels)");
 
-    axum::serve(listener, app).await?;
+    // Serve HTTP; keep the RPC server alive alongside it.
+    tokio::select! {
+        r = axum::serve(listener, app) => { r?; }
+        _ = rpc_handle.stopped() => { tracing::warn!("RPC server stopped"); }
+    }
     Ok(())
 }
 
