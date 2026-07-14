@@ -149,8 +149,11 @@ impl CkbPenaltyExecutor {
             .map_err(|e| anyhow::anyhow!("capacity overflow: {e}"))?
             .as_u64();
 
-        // Rough fee (bytes * rate). Fee cell must cover fee + change min capacity.
-        let est_fee = 1_000u64.max(self.cfg.fee_rate_per_kb);
+        // Conservative flat fee. A penalty tx is ~0.6 KB; at the default rate
+        // (1000 shannons/KB) it needs ~600 shannons, so 100_000 shannons
+        // (0.001 CKB) is comfortably above any network minimum and negligible in
+        // cost — we prefer over-paying fee to a rejected penalty.
+        let est_fee = 100_000u64.max(self.cfg.fee_rate_per_kb);
         let change_capacity = fee_capacity
             .checked_sub(est_fee)
             .ok_or_else(|| anyhow::anyhow!("fee cell {fee_capacity} too small for fee {est_fee}"))?;
