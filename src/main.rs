@@ -129,6 +129,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(%bound, "JSON-RPC watchtower surface up (7 methods, capture+store)");
 
     let app = Router::new()
+        .route("/", get(dashboard))
         .route("/health", get(health))
         .route("/attestation", get(attestation))
         .route("/channels", get(channels))
@@ -143,6 +144,11 @@ async fn main() -> anyhow::Result<()> {
         _ = rpc_handle.stopped() => { tracing::warn!("RPC server stopped"); }
     }
     Ok(())
+}
+
+/// The operator watch-console (self-contained HTML, polls the JSON endpoints).
+async fn dashboard() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../web/index.html"))
 }
 
 async fn health() -> Json<serde_json::Value> {
