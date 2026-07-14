@@ -116,6 +116,23 @@ impl Store {
         Ok(out)
     }
 
+    /// Typed view of a watched channel's registration + latest revocation,
+    /// parsed from the stored raw parts. Returns `None` if the channel has no
+    /// usable `create` part yet.
+    pub fn typed(
+        &self,
+        wc: &WatchedChannel,
+    ) -> Option<(crate::domain::CreateWatchChannel, Option<crate::domain::RevocationData>)> {
+        let create: crate::domain::CreateWatchChannel =
+            crate::domain::from_positional(wc.parts.get("create")?)?;
+        let revocation = wc
+            .parts
+            .get("revocation")
+            .and_then(|raw| crate::domain::from_positional::<crate::domain::UpdateRevocation>(raw))
+            .map(|u| u.revocation_data);
+        Some((create, revocation))
+    }
+
     /// All channels currently under watch — used by the chain watcher's periodic
     /// scan and by the dashboard.
     pub fn all_channels(&self) -> Result<Vec<WatchedChannel>> {

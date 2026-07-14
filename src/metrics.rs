@@ -15,6 +15,8 @@ pub struct Metrics {
     pub ckb_tip_height: IntGauge,
     /// 1 while the tower can currently prove liveness, 0 otherwise.
     pub live: IntGauge,
+    /// Channels currently in a detected-breach state (should normally be 0).
+    pub breaches_detected: IntGauge,
 }
 
 impl Metrics {
@@ -35,14 +37,20 @@ impl Metrics {
             "1 if the tower can currently prove liveness, else 0",
         )
         .unwrap();
+        let breaches_detected = IntGauge::new(
+            "sentinel_breaches_detected",
+            "Channels currently in a detected-breach state",
+        )
+        .unwrap();
 
         registry.register(Box::new(channels_watched.clone())).ok();
         registry.register(Box::new(tenants.clone())).ok();
         registry.register(Box::new(attestation_age.clone())).ok();
         registry.register(Box::new(ckb_tip_height.clone())).ok();
         registry.register(Box::new(live.clone())).ok();
+        registry.register(Box::new(breaches_detected.clone())).ok();
 
-        Self { registry, channels_watched, tenants, attestation_age, ckb_tip_height, live }
+        Self { registry, channels_watched, tenants, attestation_age, ckb_tip_height, live, breaches_detected }
     }
 
     pub fn encode(&self) -> String {

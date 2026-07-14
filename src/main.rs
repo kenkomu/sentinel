@@ -10,6 +10,8 @@ use axum::{extract::State, routing::get, Json, Router};
 use sentinel::attest::{self, Attestor, LivenessAttestation};
 use sentinel::ckb::CkbClient;
 use sentinel::metrics::Metrics;
+use sentinel::watch::{ChainWatcher, ScanOutcome, WatchParams};
+use sentinel::detector::Verdict;
 use sentinel::rpc;
 use sentinel::store;
 use clap::Parser;
@@ -39,11 +41,31 @@ struct Args {
     /// Seconds between liveness attestations.
     #[arg(long, default_value_t = 10)]
     attest_interval: u64,
+
+    /// Seconds between chain scans for breaches.
+    #[arg(long, default_value_t = 5)]
+    scan_interval: u64,
+
+    /// Funding-lock code hash for this network (devnet default shown).
+    #[arg(long, default_value = "0xf02ae41c20f3baeda929b5fd87703978e48aed9a6ac6d993ec8a375f941da021")]
+    funding_lock_code_hash: String,
+
+    /// Funding-lock hash type: "data2" | "type" | "data" | "data1".
+    #[arg(long, default_value = "data2")]
+    funding_lock_hash_type: String,
+
+    /// Blocks of confirmation before acting on a detected spend (reorg safety).
+    #[arg(long, default_value_t = 3)]
+    reorg_safety_blocks: u64,
 }
 
 /// The most recently produced liveness attestation, refreshed by the background
 /// loop and served verbatim at `/attestation`.
 type LatestAttestation = Arc<RwLock<Option<LivenessAttestation>>>;
+
+/// Latest scan outcomes, keyed by channel_id, refreshed each scan and surfaced
+/// on the dashboard and `/breaches`.
+type LatestScan = Arc<RwLock<Vec<ScanOutcome>>>;
 
 #[derive(Clone)]
 struct AppState {
@@ -51,6 +73,7 @@ struct AppState {
     attestor: Arc<Attestor>,
     latest: LatestAttestation,
     metrics: Metrics,
+    scan: LatestScan,
 }
 
 fn unix_now() -> u64 {
@@ -133,11 +156,50 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Background chain-scan loop: detect breaches across all watched channels.
+    let scan: LatestScan = Arc::new(RwLock::new(Vec::new()));
+    {
+        let watcher = ChainWatcher::new(
+            store.clone(),
+            CkbClient::with_opts(args.ckb_rpc_url.clone(), 10_000, 3),
+            WatchParams {
+                funding_lock_code_hash: args.funding_lock_code_hash.clone(),
+                funding_lock_hash_type: args.funding_lock_hash_type.clone(),
+                reorg_safety_blocks: args.reorg_safety_blocks,
+            },
+        );
+        let scan = scan.clone();
+        let height = height.clone();
+        let metrics = metrics.clone();
+        let interval = args.scan_interval.max(1);
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(interval));
+            loop {
+                tick.tick().await;
+                let tip = height.load(std::sync::atomic::Ordering::Relaxed);
+                if tip == 0 {
+                    continue; // wait until we know the chain tip
+                }
+                let outcomes = watcher.scan_once(tip).await;
+                let breaches = outcomes
+                    .iter()
+                    .filter(|o| matches!(o.verdict, Verdict::Breach { .. }))
+                    .count();
+                metrics.breaches_detected.set(breaches as i64);
+                if breaches > 0 {
+                    tracing::warn!(breaches, "scan: active breaches detected");
+                }
+                *scan.write().unwrap() = outcomes;
+            }
+        });
+    }
+
     let state = AppState {
         store: store.clone(),
         attestor: attestor.clone(),
         latest: latest.clone(),
         metrics: metrics.clone(),
+        scan: scan.clone(),
     };
 
     // JSON-RPC watchtower surface — what a Fiber node's
@@ -153,6 +215,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/attestation", get(attestation))
         .route("/channels", get(channels))
         .route("/receipts", get(receipts))
+        .route("/breaches", get(breaches))
         .route("/metrics", get(metrics_endpoint))
         .with_state(state);
 
@@ -202,6 +265,46 @@ async fn channels(State(s): State<AppState>) -> Json<serde_json::Value> {
 async fn receipts(State(s): State<AppState>) -> Json<serde_json::Value> {
     let list = s.store.all_receipts().unwrap_or_default();
     Json(serde_json::json!({ "count": list.len(), "receipts": list }))
+}
+
+/// Current per-channel scan verdicts, with breaches surfaced first.
+async fn breaches(State(s): State<AppState>) -> Json<serde_json::Value> {
+    let outcomes = s.scan.read().unwrap().clone();
+    let rows: Vec<serde_json::Value> = outcomes
+        .iter()
+        .map(|o| {
+            serde_json::json!({
+                "channel_id": o.channel_id,
+                "node_id": o.node_id,
+                "verdict": verdict_json(&o.verdict),
+            })
+        })
+        .collect();
+    let breach_count = outcomes
+        .iter()
+        .filter(|o| matches!(o.verdict, Verdict::Breach { .. }))
+        .count();
+    Json(serde_json::json!({ "breaches": breach_count, "outcomes": rows }))
+}
+
+fn verdict_json(v: &Verdict) -> serde_json::Value {
+    match v {
+        Verdict::ChannelOpen => serde_json::json!({ "state": "channel_open" }),
+        Verdict::LegitimateClose { broadcast_commitment } => {
+            serde_json::json!({ "state": "legitimate_close", "commitment": broadcast_commitment })
+        }
+        Verdict::Breach { commitment_tx, broadcast_commitment, held_commitment, .. } => {
+            serde_json::json!({
+                "state": "breach",
+                "commitment_tx": commitment_tx,
+                "broadcast_commitment": broadcast_commitment,
+                "held_commitment": held_commitment,
+            })
+        }
+        Verdict::Unactionable { reason } => {
+            serde_json::json!({ "state": "unactionable", "reason": reason })
+        }
+    }
 }
 
 /// Prometheus exposition endpoint.
