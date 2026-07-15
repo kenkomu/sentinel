@@ -64,13 +64,18 @@ production-gap breakdown.
 
 ## Status
 
+Proven **end-to-end on a live Fiber devnet**: a real node streams to Sentinel, an
+attacker broadcasts a stale commitment, Sentinel detects it and **broadcasts the
+penalty** — the attacker's commitment cell is swept and the penalty tx is
+committed on-chain (`0x4a9bf510…`). See `docs/dashboard-breach.png`.
+
 | Stage | What | State |
 |------|------|-------|
-| 2 | JSON-RPC watchtower server + multi-tenant store | ✅ done, verified |
-| 4 | Liveness attestations + receipts + verifier | ✅ done, verified |
+| 1 | Capture real node→tower wire payloads | ✅ live |
+| 2 | JSON-RPC watchtower server + multi-tenant store | ✅ live |
+| 3 | Chain watcher + penalty broadcast (breach → sweep) | ✅ **live, on-chain** |
+| 4 | Liveness attestations + receipts + verifier | ✅ verified |
 | 5 | Dashboard, health, metrics, Docker | ✅ done (VPS deploy pending) |
-| 1 | Devnet + capture real node→tower wire payloads | in progress (building `fnn`) |
-| 3 | Chain watcher + penalty broadcast (breach demo) | in progress |
 
 ## Quick start
 
