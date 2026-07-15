@@ -1,0 +1,6 @@
+target
+sentinel-data
+/tmp
+*.log
+.git
+upstream

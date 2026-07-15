@@ -1,13 +1,9 @@
 # Multi-stage build → a small, self-contained watchtower image.
 FROM rust:1-slim AS build
 WORKDIR /app
-# Cache deps first.
-COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src/bin && \
-    echo 'fn main(){}' > src/main.rs && \
-    echo '' > src/lib.rs && \
-    echo 'fn main(){}' > src/bin/verify.rs && \
-    cargo build --release 2>/dev/null; rm -rf src
+# Build straight from the real source. (A dummy-src dependency-cache layer is
+# omitted on purpose: it silently ships a stale placeholder binary when cargo
+# doesn't notice the real source replaced it. Correctness over a caching trick.)
 COPY . .
 RUN cargo build --release --bin sentinel --bin verify
 
