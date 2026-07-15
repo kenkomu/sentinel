@@ -7,6 +7,20 @@
 the first watchtower on any payment-channel network that can *prove* it is
 watching.**
 
+> **Proven live on a Fiber devnet, end to end:** a real node streams to Sentinel →
+> an attacker broadcasts a stale commitment → Sentinel detects it and **broadcasts
+> the penalty** → the attacker's commitment cell is swept and the penalty tx is
+> committed on-chain (`0x4a9bf510…`).
+
+![Watch console](docs/console-v3.png)
+
+The operator console: a live heartbeat that *is* the tower's proof of watch — it
+races red on a breach and flatlines when the tower can't prove liveness. Visiting
+`/attestation` in a browser cryptographically verifies the tower's signature on
+**your** machine (self-contained secp256k1, no libraries):
+
+![Proof of watch](docs/proof-v3.png)
+
 ---
 
 ## The problem
