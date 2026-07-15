@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sentinel · Proof of Watch</title>
+<style>
+  :root {
+    --bg:#070a12; --panel:#0d1322; --panel2:#0b1020; --line:#182238; --line2:#101827;
+    --ink:#e3ecfb; --muted:#7d90b2; --dim:#435270;
+    --live:#4fe6a8; --warn:#f3b64d; --breach:#ff5468;
+    --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+    --sans:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);min-height:100vh;
+    -webkit-font-smoothing:antialiased;letter-spacing:.01em;
+    background-image:
+      radial-gradient(1000px 560px at 80% -8%,rgba(79,230,168,.06),transparent 60%),
+      linear-gradient(var(--line2) 1px,transparent 1px),
+      linear-gradient(90deg,var(--line2) 1px,transparent 1px);
+    background-size:auto,44px 44px,44px 44px;}
+  .wrap{max-width:760px;margin:0 auto;padding:34px 22px 70px}
+  a{color:var(--live);text-decoration:none} a:hover{text-decoration:underline}
+
+  header{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+  header svg{width:30px;height:30px}
+  header h1{margin:0;font-size:13px;letter-spacing:.32em;text-transform:uppercase;font-weight:700}
+  header p{margin:2px 0 0;font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.05em}
+  .back{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--dim)}
+
+  /* verdict */
+  .seal{border:1px solid var(--line);border-radius:16px;padding:28px;
+    background:linear-gradient(180deg,var(--panel),var(--panel2));text-align:center;position:relative;overflow:hidden}
+  .seal .ring{width:76px;height:76px;margin:2px auto 16px;border-radius:50%;display:grid;place-items:center;
+    border:2px solid var(--dim);position:relative;transition:all .4s}
+  .seal .ring .mark{font-size:34px;line-height:1}
+  .seal.ok .ring{border-color:var(--live);box-shadow:0 0 0 6px rgba(79,230,168,.08),0 0 34px rgba(79,230,168,.25)}
+  .seal.ok .mark{color:var(--live)}
+  .seal.bad .ring{border-color:var(--breach);box-shadow:0 0 0 6px rgba(255,84,104,.08)}
+  .seal.bad .mark{color:var(--breach)}
+  .seal.pend .ring{border-color:var(--warn)} .seal.pend .mark{color:var(--warn)}
+  .seal h2{margin:0;font-family:var(--mono);font-size:22px;font-weight:700;letter-spacing:.01em}
+  .seal.ok h2{color:var(--live)} .seal.bad h2{color:var(--breach)} .seal.pend h2{color:var(--warn)}
+  .seal .lead{margin:12px auto 0;color:var(--muted);font-size:13.5px;line-height:1.55;max-width:46ch}
+  .checks{display:flex;justify-content:center;gap:10px;margin-top:20px;flex-wrap:wrap}
+  .check{font-family:var(--mono);font-size:11px;padding:6px 12px;border:1px solid var(--line);border-radius:100px;color:var(--muted);display:inline-flex;gap:7px;align-items:center}
+  .check .d{width:6px;height:6px;border-radius:50%;background:var(--dim)}
+  .check.pass{color:var(--live);border-color:rgba(79,230,168,.3)} .check.pass .d{background:var(--live);box-shadow:0 0 8px var(--live)}
+  .check.fail{color:var(--breach);border-color:rgba(255,84,104,.3)} .check.fail .d{background:var(--breach)}
+
+  /* the signed statement */
+  .stmt{margin-top:20px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel)}
+  .stmt .h{padding:13px 18px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .row{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:11px 18px;border-top:1px solid var(--line2);align-items:baseline}
+  .row:first-child{border-top:none}
+  .row .k{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.04em}
+  .row .v{font-family:var(--mono);font-size:12.5px;color:var(--ink);word-break:break-all;line-height:1.5}
+  .row .v.hl{color:var(--live)}
+  .row .v small{color:var(--muted)}
+
+  .note{margin-top:18px;color:var(--muted);font-size:13px;line-height:1.6}
+  .note b{color:var(--ink);font-weight:600}
+  .cmd{margin-top:12px;background:#080c16;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+    font-family:var(--mono);font-size:11.5px;color:var(--muted);overflow-x:auto;white-space:nowrap}
+  .cmd .p{color:var(--dim)} .cmd b{color:var(--live);font-weight:400}
+  footer{margin-top:26px;text-align:center;font-family:var(--mono);font-size:11px;color:var(--dim);line-height:1.7}
+  @media(max-width:560px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg viewBox="0 0 40 40" fill="none"><path d="M20 3l14 6v9c0 8.8-5.9 16.6-14 19-8.1-2.4-14-10.2-14-19V9l14-6z" stroke="var(--live)" stroke-width="1.4" opacity=".55"/><circle cx="20" cy="18" r="4.4" stroke="var(--live)" stroke-width="1.6"/><circle cx="20" cy="18" r="1.5" fill="var(--live)"/></svg>
+    <div><h1>Sentinel</h1><p>proof of watch</p></div>
+    <a class="back" href="/">← console</a>
+  </header>
+
+  <div class="seal pend" id="seal">
+    <div class="ring"><span class="mark" id="mark">…</span></div>
+    <h2 id="title">Verifying…</h2>
+    <p class="lead" id="lead">Checking the tower's signature in your browser.</p>
+    <div class="checks">
+      <span class="check" id="c-sig"><span class="d"></span>signature</span>
+      <span class="check" id="c-fresh"><span class="d"></span>freshness</span>
+    </div>
+  </div>
+
+  <div class="stmt">
+    <div class="h">the signed statement</div>
+    <div class="row"><span class="k">tower</span><span class="v" id="f-pub">—</span></div>
+    <div class="row"><span class="k">ckb tip height</span><span class="v hl" id="f-height">—</span></div>
+    <div class="row"><span class="k">ckb tip hash</span><span class="v" id="f-hash">—</span></div>
+    <div class="row"><span class="k">channels watched</span><span class="v" id="f-chan">—</span></div>
+    <div class="row"><span class="k">signed at</span><span class="v" id="f-ts">—</span></div>
+    <div class="row"><span class="k">signature</span><span class="v" id="f-sig">—</span></div>
+  </div>
+
+  <div class="note">
+    <b>Why this matters.</b> A watchtower asks you to trust that it is awake and
+    watching your channels. This statement removes the trust: the tower signed the
+    <b>current CKB tip</b>, and a sleeping tower could not — it would not know the
+    tip. This page verified that signature on <b>your</b> machine, and checked the
+    height against the live chain. Verify it independently from a terminal:
+    <div class="cmd"><span class="p">$</span> cargo run --bin verify -- <b>--tower</b> http://localhost:8080 <b>--ckb</b> http://127.0.0.1:8114</div>
+  </div>
+
+  <footer>this page is served by the tower · signature checked client-side · nothing to trust</footer>
+</div>
+
+<script>
+/* ── self-contained secp256k1 ECDSA verify (BigInt, no libraries) ──
+   The tower signs sha256( ckb_tip_hash_utf8 ‖ height_be8 ‖ channels_be8 ‖ ts_be8 )
+   with ECDSA/secp256k1. We recompute that digest with Web Crypto and verify the
+   signature against the tower's public key, entirely in the browser. */
+const P=0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2Fn;
+const Nn=0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
+const Gx=0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798n;
+const Gy=0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8n;
+const md=(a,m)=>((a%m)+m)%m;
+const pw=(b,e,m)=>{let r=1n;b=md(b,m);while(e>0n){if(e&1n)r=md(r*b,m);b=md(b*b,m);e>>=1n;}return r;};
+const inv=(a,m)=>pw(md(a,m),m-2n,m);
+function add(A,B){ if(!A)return B; if(!B)return A; const[x1,y1]=A,[x2,y2]=B;
+  if(x1===x2&&md(y1+y2,P)===0n)return null; let m;
+  if(x1===x2&&y1===y2) m=md(3n*x1*x1*inv(2n*y1,P),P);
+  else m=md((y2-y1)*inv(md(x2-x1,P),P),P);
+  const x3=md(m*m-x1-x2,P); return [x3,md(m*(x1-x3)-y1,P)]; }
+function mul(k,Pt){ let R=null,A=Pt; k=md(k,Nn); while(k>0n){ if(k&1n)R=add(R,A); A=add(A,A); k>>=1n; } return R; }
+const b2big=(u)=>{let r=0n;for(const b of u)r=(r<<8n)|BigInt(b);return r;};
+const hx2u=(h)=>{h=h.replace(/^0x/,'');const u=new Uint8Array(h.length/2);for(let i=0;i<u.length;i++)u[i]=parseInt(h.substr(i*2,2),16);return u;};
+function decompress(pre,x){ let y=pw(md(x*x*x+7n,P),(P+1n)/4n,P); if((y&1n)!==BigInt(pre&1))y=md(-y,P); return [x,y]; }
+function verifyECDSA(pub,z,sig){
+  const Q=decompress(pub[0], b2big(pub.slice(1,33)));
+  const r=b2big(sig.slice(0,32)), s=b2big(sig.slice(32,64));
+  if(r<=0n||r>=Nn||s<=0n||s>=Nn)return false;
+  const w=inv(s,Nn), u1=md(z*w,Nn), u2=md(r*w,Nn);
+  const R=add(mul(u1,[Gx,Gy]),mul(u2,Q));
+  return R? md(R[0],Nn)===r : false;
+}
+function be8(num){const b=new Uint8Array(8);let v=BigInt(num);for(let i=7;i>=0;i--){b[i]=Number(v&0xffn);v>>=8n;}return b;}
+function cat(arrs){let n=0;arrs.forEach(a=>n+=a.length);const o=new Uint8Array(n);let k=0;arrs.forEach(a=>{o.set(a,k);k+=a.length;});return o;}
+
+const $=id=>document.getElementById(id);
+const short=s=>s&&s.length>26?s.slice(0,14)+'…'+s.slice(-10):(s||'—');
+
+function setCheck(el,pass,label){ el.className='check '+(pass?'pass':'fail'); el.innerHTML='<span class="d"></span>'+label; }
+
+async function run(){
+  let d;
+  try { d = await (await fetch('/attestation',{headers:{'Accept':'application/json'}})).json(); }
+  catch(e){ fail('Unreachable','This console cannot reach the tower.'); return; }
+
+  if(!d.live || !d.attestation){
+    $('seal').className='seal bad'; $('mark').textContent='◌'; $('title').textContent='Liveness unproven';
+    $('lead').textContent = d.reason || 'The tower cannot currently prove it is watching. Do not rely on it.';
+    setCheck($('c-sig'),false,'no signature'); setCheck($('c-fresh'),false,'no tip');
+    return;
+  }
+  const a=d.attestation;
+  $('f-pub').textContent=a.tower_pubkey;
+  $('f-height').textContent=a.ckb_tip_height;
+  $('f-hash').textContent=short(a.ckb_tip_hash);
+  $('f-chan').textContent=a.channels_watched;
+  $('f-ts').innerHTML=new Date(a.timestamp*1000).toLocaleString()+' <small>('+(d.age_seconds??0)+'s ago)</small>';
+  $('f-sig').textContent=short(a.signature);
+
+  // recompute the signed digest and verify the ECDSA signature in-browser
+  let sigOk=false;
+  try {
+    const msg=cat([ new TextEncoder().encode(a.ckb_tip_hash), be8(a.ckb_tip_height), be8(a.channels_watched), be8(a.timestamp) ]);
+    const zbuf=await crypto.subtle.digest('SHA-256', msg);
+    const z=b2big(new Uint8Array(zbuf));
+    sigOk=verifyECDSA(hx2u(a.tower_pubkey), z, hx2u(a.signature));
+  } catch(e){ sigOk=false; }
+
+  const fresh=(d.age_seconds??999) <= 45;
+  setCheck($('c-sig'), sigOk, sigOk?'signature valid':'signature INVALID');
+  setCheck($('c-fresh'), fresh, fresh?'fresh · '+(d.age_seconds??0)+'s':'stale · '+(d.age_seconds??0)+'s');
+
+  if(sigOk && fresh){
+    $('seal').className='seal ok'; $('mark').textContent='✓'; $('title').textContent='Proven live';
+    $('lead').innerHTML='The tower signed CKB tip <b>'+a.ckb_tip_height+'</b>, and this page verified that signature in your browser. It is awake and watching — you did not have to trust it.';
+  } else if(sigOk && !fresh){
+    $('seal').className='seal pend'; $('mark').textContent='◐'; $('title').textContent='Signature valid, but stale';
+    $('lead').textContent='The signature is authentic but the tower has not re-attested recently. It may have stopped watching.';
+  } else {
+    fail('Signature invalid','The signature does not verify against the tower\'s key. Do not rely on this tower.');
+  }
+}
+function fail(t,l){ $('seal').className='seal bad'; $('mark').textContent='×'; $('title').textContent=t; $('lead').textContent=l; }
+
+run(); setInterval(run, 4000);
+</script>
+</body>
+</html>

@@ -292,20 +292,34 @@ async fn health() -> Json<serde_json::Value> {
 }
 
 /// Public proof the tower is awake: the latest attestation bound to the live CKB
-/// tip. Returns 503 semantics (an explicit `live: false`) if none has been
-/// produced yet or CKB is unreachable — a client must treat that as "unproven".
-async fn attestation(State(s): State<AppState>) -> Json<serde_json::Value> {
-    match s.latest.read().unwrap_or_else(|p| p.into_inner()).clone() {
+/// tip. Content-negotiated — a browser (Accept: text/html) gets a human-facing
+/// page that verifies the signature client-side; everything else (the `verify`
+/// tool, curl, wallets) gets the raw JSON. `live: false` means "unproven".
+async fn attestation(
+    State(s): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let wants_html = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(|a| a.contains("text/html"))
+        .unwrap_or(false);
+    if wants_html {
+        return axum::response::Html(include_str!("../web/attestation.html")).into_response();
+    }
+    let body = match s.latest.read().unwrap_or_else(|p| p.into_inner()).clone() {
         Some(att) => {
             let age = unix_now().saturating_sub(att.timestamp);
-            Json(serde_json::json!({ "live": true, "age_seconds": age, "attestation": att }))
+            serde_json::json!({ "live": true, "age_seconds": age, "attestation": att })
         }
-        None => Json(serde_json::json!({
+        None => serde_json::json!({
             "live": false,
             "reason": "no attestation yet (CKB unreachable or tower just started)",
             "tower_pubkey": s.attestor.pubkey_hex(),
-        })),
-    }
+        }),
+    };
+    Json(body).into_response()
 }
 
 async fn channels(State(s): State<AppState>) -> Json<serde_json::Value> {
