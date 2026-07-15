@@ -16,5 +16,8 @@ COPY --from=build /app/target/release/verify /usr/local/bin/verify
 EXPOSE 8080 23456
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=3s CMD curl -fsS http://localhost:8080/health || exit 1
+# http_port honors $PORT and ckb_rpc_url honors $CKB_RPC_URL, so a PaaS (Render,
+# Railway, Fly) can run this image with zero arg changes — it binds the injected
+# port and points at whatever CKB endpoint the env sets.
 ENTRYPOINT ["sentinel"]
-CMD ["--data-dir", "/data", "--http-port", "8080", "--rpc-port", "23456"]
+CMD ["--data-dir", "/data", "--rpc-port", "23456"]

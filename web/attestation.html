@@ -162,7 +162,7 @@ function setCheck(el,pass,label){ el.className='check '+(pass?'pass':'fail'); el
 
 async function run(){
   let d;
-  try { d = await (await fetch('/attestation',{headers:{'Accept':'application/json'}})).json(); }
+  try { d = await (await fetch('/attestation',{headers:{'Accept':'application/json','ngrok-skip-browser-warning':'1'}})).json(); }
   catch(e){ fail('Unreachable','This console cannot reach the tower.'); return; }
 
   if(!d.live || !d.attestation){

@@ -249,9 +249,13 @@ function setConsole(kind, verdict, sub, glyph){
 
 async function tick(){
   let att, chans, scan;
+  // ngrok-skip-browser-warning bypasses the free-tier interstitial for these
+  // background fetches (harmless header on any non-ngrok host).
+  const H = { headers: { 'ngrok-skip-browser-warning': '1' } };
+  const HJ = { headers: { 'Accept': 'application/json', 'ngrok-skip-browser-warning': '1' } };
   try { [att,chans,scan] = await Promise.all([
-    fetch('/attestation',{headers:{'Accept':'application/json'}}).then(r=>r.json()),
-    fetch('/channels').then(r=>r.json()), fetch('/breaches').then(r=>r.json()) ]);
+    fetch('/attestation',HJ).then(r=>r.json()),
+    fetch('/channels',H).then(r=>r.json()), fetch('/breaches',H).then(r=>r.json()) ]);
   } catch(e){ mode='flat'; setConsole('breach','Tower unreachable','This console cannot reach the tower. Any node relying on it is currently unprotected.','×'); return; }
   $('clock').textContent = new Date().toLocaleTimeString([], {hour12:false});
   const list = chans.channels || [];

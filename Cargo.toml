@@ -58,7 +58,7 @@ toml = "0.8"
 thiserror = "1"
 anyhow = "1"
 async-trait = "0.1"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

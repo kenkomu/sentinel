@@ -29,12 +29,15 @@ struct Args {
     #[arg(long, default_value_t = 23456)]
     rpc_port: u16,
 
-    /// HTTP port for health, metrics, attestations, and dashboard.
-    #[arg(long, default_value_t = 8080)]
+    /// HTTP port for health, metrics, attestations, and dashboard. Honors the
+    /// `PORT` env var (Render, Railway, Fly, Heroku all inject it) so the same
+    /// image runs on a PaaS with no arg changes.
+    #[arg(long, env = "PORT", default_value_t = 8080)]
     http_port: u16,
 
-    /// CKB node RPC used for liveness attestations and (later) the chain watcher.
-    #[arg(long, default_value = "http://127.0.0.1:8114")]
+    /// CKB node RPC used for liveness attestations and the chain watcher.
+    /// Honors the `CKB_RPC_URL` env var for PaaS deploys.
+    #[arg(long, env = "CKB_RPC_URL", default_value = "http://127.0.0.1:8114")]
     ckb_rpc_url: String,
 
     /// Seconds between liveness attestations.

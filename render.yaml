@@ -1,0 +1,23 @@
+# Render blueprint — one-click deploy of the Sentinel watch console.
+#
+# Deploy: Render dashboard → New → Blueprint → connect this repo. Render reads
+# this file, builds the Dockerfile, and gives you a clean HTTPS URL like
+# https://sentinel-xxxx.onrender.com (no domain, no interstitial).
+#
+# Caveat: the free plan spins the service down after ~15 min idle and cold-starts
+# on the next request. A watchtower should be always-on; for a public demo add a
+# free uptime pinger (e.g. UptimeRobot) hitting /health every 10 min to keep it
+# warm, or run the always-on copy on a small VPS.
+services:
+  - type: web
+    name: sentinel
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Which chain the tower attests against. Public CKB testnet by default.
+      - key: CKB_RPC_URL
+        value: https://testnet.ckb.dev/rpc
+      # Render injects PORT automatically; the binary already honors it.
