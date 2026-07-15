@@ -1,52 +1,51 @@
 # What is real, what is mocked, what production needs
 
-The hackathon explicitly asks submissions to be clear about this. Kept honest and
-current as the build progresses.
+The hackathon asks submissions to be clear about this. Kept scrupulously honest.
 
-## Fully working — verified live against a Fiber devnet
+## Fully working — proven live on a Fiber devnet, end to end
 
-- **Node → tower ingestion.** A real devnet node (node 3), configured with
+- **Node → tower ingestion.** A real devnet node, configured with
   `standalone_watchtower_rpc_url` → Sentinel + `disable_built_in_watchtower`,
-  streamed its full watchtower lifecycle over JSON-RPC: `create_watch_channel`,
-  `update_revocation`, `create_preimage`, `remove_preimage`,
-  `update_local_settlement`, `update_pending_remote_settlement`. Real payloads:
-  `tests/fixtures/captured-devnet.log`.
-- **Channel identity derivation.** musig2 funding-lock derivation matches the
-  real funding cell exactly (found the live 599 CKB funding cell from just the
-  funding pubkeys, via the `locate` tool).
-- **Chain-state detection.** The scan loop correctly reports channel state
-  against the live chain (ChannelOpen for a live funding cell).
-- **Accountability.** Live attestations bound to the real CKB tip; the `verify`
-  tool proves both PROVEN LIVE and catches a stale/sleeping tower; signed
-  receipts on registration.
+  streams its full watchtower lifecycle over JSON-RPC (create_watch_channel,
+  update_revocation, create/remove_preimage, local/pending settlements). Real
+  payloads: `tests/fixtures/captured-devnet.log`.
+- **Breach detection.** The scan derives each channel's funding lock (musig2),
+  finds the commitment tx that spent it, reads the broadcast commitment number,
+  and decides breach vs legitimate-close vs unactionable.
+- **Penalty broadcast — the whole point.** On a real breach, Sentinel assembles
+  the revocation (penalty) transaction and broadcasts it. **Proven:** the
+  attacker's commitment cell was swept (`get_live_cell` → `unknown`) and the
+  penalty transaction committed on-chain (`0x4a9bf510…`). The build matches
+  Fiber's own built-in watchtower transaction byte-for-byte in structure.
+- **Accountability.** Live CKB-tip-bound attestations; the `verify` tool proves
+  liveness and catches a stale/sleeping tower; signed registration receipts.
 - **Persistence & identity.** Multi-tenant sled store survives restart; tower
   identity key persists across restarts.
-- **Operator surface.** Dashboard, `/metrics`, `/health`, `/channels`,
-  `/breaches`, `/receipts`.
+- **Operator surface.** Dashboard (with live red breach state), `/metrics`,
+  `/health`, `/channels`, `/breaches`, `/receipts`.
 
-## Fully working — verified by unit tests (14 passing)
+## Verified by unit tests (17 passing)
 
-- Breach decision logic (breach / legitimate-close / unactionable).
-- Revocation-witness byte layout (vs real captured data).
-- Penalty output deserialization as a molecule `CellOutput` (vs real data).
-- Domain parsing (positional-array params), musig2 aggregation properties.
+Breach decision logic; revocation-witness byte layout; penalty-output molecule
+deserialization; the commitment-lock message format (verified against the
+built-in watchtower's accepted transaction); musig2 aggregation; positional-array
+param parsing; identity persistence.
 
-## Built, pending the final live run
+## Hard-won protocol details (undocumented; found by decoding the built-in tx)
 
-- **Breach → penalty broadcast end-to-end.** Every component is built and wired:
-  the detector raises a Breach, the executor assembles the sweep transaction
-  (pre-computed penalty output + revocation witness for the commitment input),
-  collects a fee cell, signs it with CKB secp256k1-blake160 sighash-all, and
-  broadcasts. The live breach run needs a **debug** `fnn` because Fiber's breach
-  trigger (`submit_commitment_transaction`) is `#[cfg(debug_assertions)]`;
-  that build is the last step. Repro: `scripts/full-demo.sh`.
-- **The one honest risk:** CKB sighash correctness is only fully confirmed by an
-  accepted on-chain transaction. The implementation is reviewed against the spec
-  and the witness/tx assembly is unit-tested, but the live broadcast is the
-  final proof.
+- Punish commitment N with the revocation numbered **N+1** (Daric: the later
+  revocation revokes the earlier state).
+- Penalty cell deps: `[CommitmentLock, ckb-auth, secp256k1]` — funding lock not
+  needed.
+- `output_data "0x00000000"` is a molecule-packed **empty** `Bytes`, not four
+  zero bytes; it must be unpacked or the length-prefixed message hash breaks.
+- Commitment-lock message: `blake2b(output ‖ u32le(len(data)) ‖ data ‖
+  args[0..28] ‖ version)`.
 
 ## Known limits / production gaps
 
+- Network cell-dep out-points are config (devnet values shipped); testnet/mainnet
+  need their own `config.toml`.
 - Fee is a conservative flat value, not size-computed (negligible over-pay).
 - RPC auth is the node's bearer token → tenant; no additional hardening yet.
 - Single tower; no redundancy/failover.
@@ -55,5 +54,5 @@ current as the build progresses.
 ## Roadmap
 
 TEE-attested penalty signing (PCR0-pinned enclave), P2P tower discovery +
-multi-tower redundancy, size-based fee estimation, wallet SDK for auto-register
-+ periodic verify. See `SUBMISSION.md`.
+multi-tower redundancy, size-based fee estimation, watchtower-client SDK. See
+`SUBMISSION.md`.

@@ -64,8 +64,13 @@ verifiable tower necessary.
 - Packaging: multi-stage `Dockerfile` + `docker-compose.yml` for one-command
   deploy.
 
-## Demonstrated, end-to-end
+## Demonstrated, end-to-end on a live Fiber devnet
 
+- **Full breach defense:** a real node streams to Sentinel → an attacker
+  broadcasts a stale commitment → Sentinel detects it and **broadcasts the
+  penalty** → the attacker's commitment cell is **swept** (`get_live_cell` →
+  `unknown`) and the penalty tx is **committed on-chain** (`0x4a9bf510…`). See
+  `docs/dashboard-breach.png`.
 - Multi-tenancy: two nodes' tokens resolve to distinct tenants, each isolated;
   survives restart.
 - Accountability, **both** directions:
@@ -73,7 +78,6 @@ verifiable tower necessary.
   - Tower stuck on an old block while the chain advances → `verify` reports
     **STALE — the tower is NOT watching** (exit 5).
 - Signed receipts issued on registration, bound to the CKB height.
-- Live dashboard rendered (see `docs/dashboard.png`).
 
 ## What is fully working / mocked / production gaps
 
