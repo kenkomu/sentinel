@@ -31,3 +31,8 @@ dep_type = "dep_group"
 tx_hash = "0xcfcbbe3426fc724b308b2cdb1177c26dd242e6f871b099eec86478ef8825ebd8"
 index = 7
 dep_type = "code"
+
+[penalty.auth_dep]
+tx_hash = "0xcfcbbe3426fc724b308b2cdb1177c26dd242e6f871b099eec86478ef8825ebd8"
+index = 5
+dep_type = "code"

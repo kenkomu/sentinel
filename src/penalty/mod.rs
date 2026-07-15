@@ -72,3 +72,6 @@ impl PenaltyExecutor for MockExecutor {
 
 #[cfg(test)]
 mod verify_test2;
+
+#[cfg(test)]
+mod decode_test;

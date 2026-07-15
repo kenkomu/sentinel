@@ -58,6 +58,9 @@ pub struct PenaltyConfig {
     pub commitment_lock_dep: CellDep,
     /// Cell dep for the secp256k1 sighash lock (fee-provider input / change).
     pub secp256k1_lock_dep: CellDep,
+    /// Cell dep for the ckb-auth script the commitment lock spawns for signature
+    /// verification. Required alongside the commitment-lock code dep.
+    pub auth_dep: Option<CellDep>,
     /// Fee rate in shannons per 1000 bytes.
     #[serde(default = "default_fee_rate")]
     pub fee_rate_per_kb: u64,

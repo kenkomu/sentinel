@@ -136,16 +136,19 @@ impl ChainWatcher {
 
         if let Verdict::Breach { commitment_index, broadcast_commitment, .. } = &verdict {
             tracing::warn!(channel = %create.channel_id, node = %wc.node_id, "BREACH detected");
-            // The revocation signature binds to the SPECIFIC broadcast
-            // commitment's args, so punish with the revocation for exactly that
-            // commitment number — not merely the latest one.
-            let matching = self
+            // In Fiber's revocation semantics, the revocation with
+            // commitment_number = N+1 revokes commitment cell N (the secret is
+            // released when moving PAST that state). Daric lets the LATEST
+            // revocation revoke any earlier commitment, so punish with the
+            // highest-numbered revocation we hold that is strictly greater than
+            // the broadcast — falling back to the stored latest.
+            let punish_with = self
                 .store
-                .get_revocation_for(&wc.node_id, &create.channel_id, *broadcast_commitment)
+                .get_revocation_for(&wc.node_id, &create.channel_id, *broadcast_commitment + 1)
                 .ok()
                 .flatten()
                 .or_else(|| revocation.clone());
-            if let (Some(executor), Some(revocation)) = (self.executor.as_ref(), matching) {
+            if let (Some(executor), Some(revocation)) = (self.executor.as_ref(), punish_with) {
                 self.punish(&create, &revocation, &spend.tx_hash, *commitment_index, executor.as_ref())
                     .await;
             }

@@ -106,8 +106,21 @@ impl CkbPenaltyExecutor {
             .ok_or_else(|| anyhow::anyhow!("bad penalty output hex"))?;
         let penalty_output = CellOutput::from_slice(&output_bytes)
             .map_err(|e| anyhow::anyhow!("penalty output not a CellOutput: {e}"))?;
-        let output_data = crate::domain::parse_hex_bytes(&ctx.revocation.output_data)
-            .unwrap_or_default();
+        // revocation.output_data is a molecule-packed `Bytes` (a 4-byte LE length
+        // prefix followed by the raw data), NOT raw cell data. Unpack it: e.g.
+        // "0x00000000" is an EMPTY Bytes, so the cell's data must be empty — not
+        // four zero bytes. Getting this wrong changes the length prefix the
+        // commitment lock hashes and the revocation signature no longer verifies.
+        let output_data = {
+            let packed = crate::domain::parse_hex_bytes(&ctx.revocation.output_data)
+                .unwrap_or_default();
+            if packed.len() >= 4 {
+                let len = u32::from_le_bytes(packed[0..4].try_into().unwrap()) as usize;
+                packed.get(4..4 + len).map(|s| s.to_vec()).unwrap_or_default()
+            } else {
+                Vec::new()
+            }
+        };
 
         // 2. Revocation witness unlocks the commitment cell (no key needed).
         let revocation_witness = build_revocation_witness(&ctx.revocation, &ctx.x_only_aggregated_pubkey)
@@ -129,20 +142,15 @@ impl CkbPenaltyExecutor {
             ctx.commitment_index,
         );
 
-        // Cell deps for spending the commitment cell:
-        //  * the commitment-lock code itself (configured — the commitment tx does
-        //    NOT reference it, since that tx only executed the FUNDING lock), and
-        //  * the deps the commitment tx used (CkbAuth etc.), which the
-        //    commitment-lock script also needs to verify its signature.
-        // We include both, plus the secp dep for the fee input.
-        let auth_deps: Vec<CellDep> = self
-            .ckb
-            .get_tx_cell_deps(&ctx.commitment_tx_hash)
-            .await
-            .unwrap_or_default()
-            .iter()
-            .filter_map(Self::json_cell_dep)
-            .collect();
+        // Cell deps mirror Fiber's own build_revocation_tx exactly:
+        //   [ commitment-lock code, ckb-auth code, secp256k1 dep-group ].
+        // The commitment lock spawns ckb-auth to verify the revocation signature,
+        // so the auth dep is required; the funding-lock dep is NOT (it is only
+        // referenced by the commitment tx, not by our penalty tx).
+        let auth_deps: Vec<CellDep> = match &self.cfg.auth_dep {
+            Some(a) => vec![Self::cell_dep(a)?],
+            None => Vec::new(),
+        };
 
         // 4. Change output back to the signer.
         let change_output = CellOutput::new_builder()
