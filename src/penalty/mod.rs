@@ -19,6 +19,8 @@
 
 pub mod ckb_executor;
 pub mod witness;
+#[cfg(test)]
+mod verify_test;
 
 use crate::domain::RevocationData;
 use async_trait::async_trait;
@@ -67,3 +69,6 @@ impl PenaltyExecutor for MockExecutor {
         PenaltyOutcome::Broadcast(format!("mock-penalty-for-{}", ctx.channel_id))
     }
 }
+
+#[cfg(test)]
+mod verify_test2;

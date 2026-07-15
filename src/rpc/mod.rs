@@ -66,6 +66,17 @@ impl WatchtowerRpc {
 
     pub fn store_revocation(&self, node_id: &str, raw: Value) -> Result<()> {
         let channel_id = field(&raw, "channel_id").unwrap_or_else(|| "unknown".into());
+        // Keep the latest as the channel's "revocation" part (for the dashboard),
+        // and also index this revocation by its commitment number so the exact
+        // one can be selected when punishing a specific old commitment.
+        if let Some(update) =
+            crate::domain::from_positional::<crate::domain::UpdateRevocation>(&raw)
+        {
+            if let Some(n) = update.revocation_data.commitment_number_u64() {
+                self.store
+                    .insert_revocation(node_id, &channel_id, n, &update.revocation_data)?;
+            }
+        }
         self.store.insert_raw(node_id, &channel_id, "revocation", raw)
     }
 

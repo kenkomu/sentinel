@@ -33,6 +33,11 @@ pub struct Store {
     channels: sled::Tree,
     preimages: sled::Tree,
     receipts: sled::Tree,
+    /// Per-commitment revocation data, keyed by node:channel:commitment_number.
+    /// The revocation signature binds to a specific commitment's args, so to
+    /// punish a broadcast of commitment N we need the revocation for exactly N,
+    /// not merely the latest one.
+    revocations: sled::Tree,
 }
 
 fn key(node_id: &str, channel_id: &str) -> Vec<u8> {
@@ -52,7 +57,8 @@ impl Store {
         let channels = db.open_tree("channels")?;
         let preimages = db.open_tree("preimages")?;
         let receipts = db.open_tree("receipts")?;
-        Ok(Self { db, channels, preimages, receipts })
+        let revocations = db.open_tree("revocations")?;
+        Ok(Self { db, channels, preimages, receipts, revocations })
     }
 
     /// Store a raw params payload under a named part for a channel, merging into
@@ -83,6 +89,34 @@ impl Store {
     pub fn remove_channel(&self, node_id: &str, channel_id: &str) -> Result<()> {
         self.channels.remove(key(node_id, channel_id))?;
         Ok(())
+    }
+
+    /// Persist a revocation keyed by its commitment number, so any specific old
+    /// commitment can later be punished with the exact matching revocation.
+    pub fn insert_revocation(
+        &self,
+        node_id: &str,
+        channel_id: &str,
+        commitment_number: u64,
+        revocation: &crate::domain::RevocationData,
+    ) -> Result<()> {
+        let k = format!("{node_id}:{channel_id}:{commitment_number}").into_bytes();
+        self.revocations.insert(k, serde_json::to_vec(revocation)?)?;
+        Ok(())
+    }
+
+    /// The revocation for a specific commitment number, if held.
+    pub fn get_revocation_for(
+        &self,
+        node_id: &str,
+        channel_id: &str,
+        commitment_number: u64,
+    ) -> Result<Option<crate::domain::RevocationData>> {
+        let k = format!("{node_id}:{channel_id}:{commitment_number}").into_bytes();
+        match self.revocations.get(&k)? {
+            Some(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
+            None => Ok(None),
+        }
     }
 
     pub fn insert_preimage(&self, node_id: &str, payment_hash: &str, preimage: &str) -> Result<()> {

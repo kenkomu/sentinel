@@ -134,10 +134,19 @@ impl ChainWatcher {
             &commitment_args,
         );
 
-        if let Verdict::Breach { commitment_index, .. } = &verdict {
+        if let Verdict::Breach { commitment_index, broadcast_commitment, .. } = &verdict {
             tracing::warn!(channel = %create.channel_id, node = %wc.node_id, "BREACH detected");
-            if let (Some(executor), Some(revocation)) = (self.executor.as_ref(), revocation.as_ref()) {
-                self.punish(&create, revocation, &spend.tx_hash, *commitment_index, executor.as_ref())
+            // The revocation signature binds to the SPECIFIC broadcast
+            // commitment's args, so punish with the revocation for exactly that
+            // commitment number — not merely the latest one.
+            let matching = self
+                .store
+                .get_revocation_for(&wc.node_id, &create.channel_id, *broadcast_commitment)
+                .ok()
+                .flatten()
+                .or_else(|| revocation.clone());
+            if let (Some(executor), Some(revocation)) = (self.executor.as_ref(), matching) {
+                self.punish(&create, &revocation, &spend.tx_hash, *commitment_index, executor.as_ref())
                     .await;
             }
         }
@@ -169,6 +178,11 @@ impl ChainWatcher {
             tracing::error!(channel = %create.channel_id, "punish: musig2 aggregation failed");
             return;
         };
+        tracing::info!(
+            channel = %create.channel_id,
+            using_revocation_commitment = ?revocation.commitment_number_u64(),
+            "punish: assembling penalty with this revocation"
+        );
         let ctx = BreachContext {
             channel_id: create.channel_id.clone(),
             commitment_tx_hash: commitment_tx_hash.to_string(),

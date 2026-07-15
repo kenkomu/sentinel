@@ -129,9 +129,13 @@ impl CkbPenaltyExecutor {
             ctx.commitment_index,
         );
 
-        // Auto-discover the commitment-lock code dep from the commitment tx
-        // itself (it necessarily referenced it), so we work on any deployment.
-        let commitment_deps: Vec<CellDep> = self
+        // Cell deps for spending the commitment cell:
+        //  * the commitment-lock code itself (configured — the commitment tx does
+        //    NOT reference it, since that tx only executed the FUNDING lock), and
+        //  * the deps the commitment tx used (CkbAuth etc.), which the
+        //    commitment-lock script also needs to verify its signature.
+        // We include both, plus the secp dep for the fee input.
+        let auth_deps: Vec<CellDep> = self
             .ckb
             .get_tx_cell_deps(&ctx.commitment_tx_hash)
             .await
@@ -170,16 +174,11 @@ impl CkbPenaltyExecutor {
             .lock(Some(Bytes::from(vec![0u8; 65])).pack())
             .build();
 
-        // Cell deps: the commitment tx's deps (commitment-lock code) if we found
-        // them, else the configured commitment_lock_dep; plus the secp dep for
-        // the fee input.
-        let mut builder = TransactionBuilder::default();
-        if commitment_deps.is_empty() {
-            builder = builder.cell_dep(Self::cell_dep(&self.cfg.commitment_lock_dep)?);
-        } else {
-            builder = builder.cell_deps(commitment_deps);
-        }
-        let tx = builder
+        // Cell deps: CommitmentLock code (config) + the commitment tx's auth
+        // deps + the secp dep for the fee input.
+        let tx = TransactionBuilder::default()
+            .cell_dep(Self::cell_dep(&self.cfg.commitment_lock_dep)?)
+            .cell_deps(auth_deps)
             .cell_dep(Self::cell_dep(&self.cfg.secp256k1_lock_dep)?)
             .input(CellInput::new(commitment_out_point, 0))
             .input(CellInput::new(fee_out_point, 0))
@@ -290,7 +289,9 @@ impl PenaltyExecutor for CkbPenaltyExecutor {
             Err(e) => return PenaltyOutcome::Failed(format!("assemble penalty: {e}")),
         };
 
-        match self.ckb.send_transaction(Self::tx_to_json(&tx)).await {
+        let tx_json = Self::tx_to_json(&tx);
+        tracing::debug!(penalty_tx = %serde_json::to_string(&tx_json).unwrap_or_default(), "assembled penalty tx");
+        match self.ckb.send_transaction(tx_json).await {
             Ok(hash) => PenaltyOutcome::Broadcast(hash),
             Err(e) => PenaltyOutcome::Failed(format!("broadcast penalty: {e}")),
         }
