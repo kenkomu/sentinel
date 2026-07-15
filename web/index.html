@@ -6,281 +6,385 @@
 <title>Sentinel · Watch Console</title>
 <style>
   :root {
-    --bg: #0a111e;
-    --panel: #111c2f;
-    --panel-2: #0e1728;
-    --line: #1e2c45;
-    --ink: #e8eef9;
-    --muted: #7d90b0;
-    --dim: #4a5a78;
-    --live: #34e5c6;
-    --warn: #f4b44c;
-    --breach: #ff4d64;
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+    --bg: #070a12;
+    --bg2: #0a0e1a;
+    --panel: #0d1322;
+    --panel-2: #0b1020;
+    --line: #182238;
+    --line-2: #101827;
+    --ink: #e3ecfb;
+    --muted: #7d90b2;
+    --dim: #435270;
+    --live: #4fe6a8;       /* phosphor mint — the tower is alive */
+    --live-dim: #1c8f68;
+    --warn: #f3b64d;
+    --breach: #ff5468;
+    --breach-dim: #b5303f;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
     --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
+  html, body { margin: 0; }
   body {
-    margin: 0; background: var(--bg); color: var(--ink);
+    background: var(--bg); color: var(--ink);
     font-family: var(--sans); -webkit-font-smoothing: antialiased;
+    min-height: 100vh; letter-spacing: .01em;
+    /* layered tactical field: soft vignette + faint grid */
     background-image:
-      radial-gradient(1200px 500px at 80% -10%, rgba(52,229,198,.06), transparent),
-      radial-gradient(900px 400px at 0% 0%, rgba(244,180,76,.04), transparent);
-    min-height: 100vh;
+      radial-gradient(1100px 620px at 78% -8%, rgba(79,230,168,.06), transparent 60%),
+      radial-gradient(900px 520px at 8% 4%, rgba(255,84,104,.035), transparent 55%),
+      linear-gradient(var(--line-2) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-2) 1px, transparent 1px);
+    background-size: auto, auto, 44px 44px, 44px 44px;
+    background-position: center, center, center, center;
   }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 22px 80px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 26px 22px 70px; }
 
-  header.bar {
+  /* ── top bar ─────────────────────────────────────────── */
+  header {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 18px; padding-bottom: 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap;
+    gap: 16px; flex-wrap: wrap; padding-bottom: 18px;
   }
-  .brand { display: flex; align-items: center; gap: 12px; }
-  .glyph {
-    width: 34px; height: 34px; border-radius: 8px;
-    border: 1px solid var(--line); position: relative; flex: none;
-    background: linear-gradient(160deg, #14233b, #0c1526);
-  }
-  .glyph::before {
-    content:""; position:absolute; inset: 8px; border-radius: 50%;
-    border: 1.5px solid var(--live); box-shadow: 0 0 12px rgba(52,229,198,.5);
-  }
-  .brand h1 { font-size: 15px; margin: 0; letter-spacing: .14em; text-transform: uppercase; font-weight: 650; }
-  .brand p { margin: 2px 0 0; font-size: 11.5px; color: var(--muted); letter-spacing: .04em; }
-  .ident { font-family: var(--mono); font-size: 11.5px; color: var(--dim); text-align: right; }
-  .ident b { color: var(--muted); font-weight: 500; }
-
-  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: var(--dim); }
-
-  /* Signature: the heartbeat panel */
-  .watch {
-    margin-top: 26px; border: 1px solid var(--line); border-radius: 16px;
-    background: linear-gradient(180deg, var(--panel), var(--panel-2));
-    padding: 26px 28px; position: relative; overflow: hidden;
-  }
-  .watch .eyebrow { margin-bottom: 14px; }
-  .pulse-row { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
-  .heart {
-    --c: var(--live);
-    width: 100px; height: 100px; border-radius: 50%; flex: none; position: relative;
+  .brand { display: flex; align-items: center; gap: 13px; }
+  .sigil {
+    width: 34px; height: 34px; flex: none; position: relative;
     display: grid; place-items: center;
   }
-  .heart .core {
-    width: 18px; height: 18px; border-radius: 50%; background: var(--c);
-    box-shadow: 0 0 18px var(--c);
+  .sigil svg { width: 34px; height: 34px; }
+  .brand h1 {
+    margin: 0; font-size: 15px; font-weight: 700;
+    letter-spacing: .34em; text-transform: uppercase;
   }
-  .heart .ring {
-    position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--c);
-    opacity: .0;
+  .brand p { margin: 3px 0 0; font-size: 11px; color: var(--muted); letter-spacing: .06em; font-family: var(--mono); }
+  .sysline { display: flex; align-items: center; gap: 18px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .sysline b { color: var(--muted); font-weight: 500; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 8px; border: 1px solid var(--line); border-radius: 100px; color: var(--muted); }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+  .pill.on .dot { background: var(--live); box-shadow: 0 0 0 0 rgba(79,230,168,.55); animation: breathe 2.4s ease-out infinite; }
+  .pill.alarm .dot { background: var(--breach); box-shadow: 0 0 0 0 rgba(255,84,104,.6); animation: breathe 1s ease-out infinite; }
+  .pill.alarm { color: var(--breach); border-color: rgba(255,84,104,.35); }
+  @keyframes breathe { 0%{box-shadow:0 0 0 0 rgba(79,230,168,.5)} 70%{box-shadow:0 0 0 7px rgba(79,230,168,0)} 100%{box-shadow:0 0 0 0 rgba(79,230,168,0)} }
+
+  /* ── the vital-signs strip (signature) ───────────────── */
+  .vitals {
+    margin-top: 4px; border: 1px solid var(--line); border-top-left-radius: 14px; border-top-right-radius: 14px;
+    background: linear-gradient(180deg, #0b1120, #090d18);
+    position: relative; overflow: hidden;
   }
-  .heart.beating .ring { animation: ping 2s ease-out infinite; }
-  @keyframes ping {
-    0% { transform: scale(.35); opacity: .8; }
-    100% { transform: scale(1); opacity: 0; }
+  .vitals .tag {
+    position: absolute; top: 11px; left: 16px; z-index: 2;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .24em; text-transform: uppercase; color: var(--dim);
   }
-  @media (prefers-reduced-motion: reduce) { .heart.beating .ring { animation: none; opacity:.25; } }
-
-  .status-main { min-width: 220px; }
-  .status-main .big {
-    font-size: 30px; font-weight: 700; letter-spacing: -.01em; line-height: 1.05; margin: 0;
+  .vitals .bpm {
+    position: absolute; top: 11px; right: 16px; z-index: 2;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--live);
   }
-  .status-main .sub { margin: 8px 0 0; color: var(--muted); font-size: 13.5px; max-width: 46ch; }
-  .verdict-live .big { color: var(--live); }
-  .verdict-warn .big { color: var(--warn); }
-  .verdict-breach .big { color: var(--breach); }
+  #ecg { display: block; width: 100%; height: 96px; }
 
-  .metrics { margin-left: auto; display: grid; grid-template-columns: repeat(2, minmax(120px,1fr)); gap: 10px; }
-  .metric { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: rgba(255,255,255,.012); }
-  .metric .k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
-  .metric .v { font-family: var(--mono); font-size: 20px; margin-top: 4px; color: var(--ink); }
-
-  /* Breach banner */
-  .alarm {
-    display: none; margin-top: 18px; border: 1px solid var(--breach);
-    background: linear-gradient(90deg, rgba(255,77,100,.16), rgba(255,77,100,.04));
-    border-radius: 12px; padding: 14px 16px; color: #ffd6dc; font-size: 13.5px;
+  /* ── status console ──────────────────────────────────── */
+  .console {
+    border: 1px solid var(--line); border-top: none;
+    border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    padding: 26px 28px 24px; display: grid; grid-template-columns: 1fr auto; gap: 26px; align-items: center;
   }
-  .alarm.on { display: block; animation: flash 1.1s steps(2) infinite; }
-  @keyframes flash { 50% { border-color: rgba(255,77,100,.35); } }
+  .status .verdict {
+    font-family: var(--mono); font-weight: 700; letter-spacing: .02em;
+    font-size: clamp(26px, 4.4vw, 40px); line-height: 1; margin: 0;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .status .verdict .glyph { font-size: .8em; }
+  .status .sub { margin: 12px 0 0; color: var(--muted); font-size: 13.5px; max-width: 52ch; line-height: 1.5; }
+  .s-live .verdict { color: var(--live); }
+  .s-warn .verdict { color: var(--warn); }
+  .s-breach .verdict { color: var(--breach); }
 
-  section.grid { margin-top: 24px; display: grid; grid-template-columns: 1fr; gap: 18px; }
-  @media (min-width: 780px) { section.grid { grid-template-columns: 1fr; } }
+  .gauges { display: grid; grid-template-columns: repeat(2, 128px); gap: 10px; }
+  .gauge { border: 1px solid var(--line); border-radius: 11px; padding: 12px 14px; background: rgba(255,255,255,.012); }
+  .gauge .k { font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+  .gauge .v { font-family: var(--mono); font-size: 22px; margin-top: 5px; color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .gauge .v small { font-size: 12px; color: var(--muted); }
 
-  .card { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden; }
-  .card > h2 { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 0; padding: 16px 18px; border-bottom: 1px solid var(--line); font-weight: 600; display:flex; justify-content:space-between; }
-  .card .count { font-family: var(--mono); color: var(--live); }
+  /* alarm frame when breach active */
+  .alarmframe { position: fixed; inset: 0; pointer-events: none; z-index: 40; box-shadow: inset 0 0 0 2px rgba(255,84,104,0); transition: box-shadow .4s; }
+  .alarmframe.on { box-shadow: inset 0 0 0 2px rgba(255,84,104,.5), inset 0 0 120px rgba(255,84,104,.09); animation: framepulse 1.4s ease-in-out infinite; }
+  @keyframes framepulse { 50% { box-shadow: inset 0 0 0 2px rgba(255,84,104,.22), inset 0 0 120px rgba(255,84,104,.05); } }
 
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 11px 18px; border-bottom: 1px solid var(--panel-2); }
-  th { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); font-weight: 500; }
-  td.mono, .tenant { font-family: var(--mono); font-size: 12px; color: var(--muted); }
-  .chip { font-family: var(--mono); font-size: 10.5px; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--line); color: var(--muted); }
-  .chip.rev { color: var(--live); border-color: rgba(52,229,198,.35); }
-  .empty { padding: 26px 18px; color: var(--dim); font-size: 13px; }
+  /* ── watch log ───────────────────────────────────────── */
+  .log { margin-top: 20px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--panel); }
+  .log > .head { display: flex; align-items: center; justify-content: space-between; padding: 15px 18px; border-bottom: 1px solid var(--line); }
+  .log > .head h2 { margin: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .log > .head .n { font-family: var(--mono); color: var(--live); font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { text-align: left; padding: 10px 18px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); font-weight: 500; }
+  tbody td { padding: 13px 18px; border-top: 1px solid var(--line-2); font-size: 13px; vertical-align: middle; }
+  td.mono, .m { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .chip { display: inline-block; font-family: var(--mono); font-size: 10px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); margin: 1px 2px 1px 0; }
+  .chip.rev { color: var(--live); border-color: rgba(79,230,168,.34); background: rgba(79,230,168,.05); }
+  .st { font-family: var(--mono); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 7px; }
+  .st.watch { color: var(--live); }
+  .st.breach { color: var(--breach); }
+  .st.swept { color: var(--live); }
+  .st.muted { color: var(--muted); font-weight: 400; }
+  .st .led { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+  .st.watch .led { animation: blink 2s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .empty { padding: 30px 18px; color: var(--dim); font-size: 13px; font-family: var(--mono); }
 
-  footer { margin-top: 30px; color: var(--dim); font-size: 11.5px; font-family: var(--mono); text-align: center; letter-spacing: .04em; }
-  a { color: var(--live); text-decoration: none; }
+  footer { margin-top: 26px; color: var(--dim); font-size: 11px; font-family: var(--mono); text-align: center; letter-spacing: .03em; line-height: 1.7; }
+  footer a { color: var(--live); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  @media (max-width: 720px) {
+    .console { grid-template-columns: 1fr; }
+    .gauges { grid-template-columns: repeat(2, 1fr); }
+    thead { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 </style>
 </head>
 <body>
+<div class="alarmframe" id="alarmframe"></div>
 <div class="wrap">
-  <header class="bar">
+  <header>
     <div class="brand">
-      <div class="glyph"></div>
+      <div class="sigil">
+        <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+          <path d="M20 3l14 6v9c0 8.8-5.9 16.6-14 19-8.1-2.4-14-10.2-14-19V9l14-6z" stroke="var(--live)" stroke-width="1.4" opacity=".55"/>
+          <circle cx="20" cy="18" r="4.4" stroke="var(--live)" stroke-width="1.6"/>
+          <circle cx="20" cy="18" r="1.5" fill="var(--live)"/>
+        </svg>
+      </div>
       <div>
         <h1>Sentinel</h1>
-        <p>Accountable watchtower · Fiber Network</p>
+        <p>node watch · fiber network</p>
       </div>
     </div>
-    <div class="ident">
-      <div><b>tower</b> <span id="pubkey">—</span></div>
-      <div><b>updated</b> <span id="clock">—</span></div>
+    <div class="sysline">
+      <span class="pill on" id="pill"><span class="dot"></span><span id="pill-t">on watch</span></span>
+      <span><b>tower</b> <span id="pubkey">—</span></span>
+      <span id="clock">—</span>
     </div>
   </header>
 
-  <div class="watch" id="watch">
-    <div class="eyebrow">Proof of watch</div>
-    <div class="pulse-row">
-      <div class="heart" id="heart"><div class="ring"></div><div class="core"></div></div>
-      <div class="status-main" id="status">
-        <p class="big">Connecting…</p>
-        <p class="sub">Reading the tower's latest liveness attestation.</p>
-      </div>
-      <div class="metrics">
-        <div class="metric"><div class="k">CKB tip</div><div class="v" id="m-height">—</div></div>
-        <div class="metric"><div class="k">Attest age</div><div class="v" id="m-age">—</div></div>
-        <div class="metric"><div class="k">Channels</div><div class="v" id="m-chan">—</div></div>
-        <div class="metric"><div class="k">Tenants</div><div class="v" id="m-tenant">—</div></div>
-      </div>
-    </div>
-    <div class="alarm" id="alarm"></div>
-  </div>
+  <!-- signature: the tower's vital signs -->
+  <section class="vitals">
+    <span class="tag">proof of watch</span>
+    <span class="bpm" id="bpm">— / min</span>
+    <canvas id="ecg"></canvas>
+  </section>
 
-  <section class="grid">
-    <div class="card">
-      <h2>Channels under watch <span class="count" id="chan-count">0</span></h2>
-      <div id="chan-body">
-        <div class="empty">No channels registered yet. A Fiber node registers by pointing
-          <span class="tenant">standalone_watchtower_rpc_url</span> here.</div>
-      </div>
+  <section class="console s-live" id="console">
+    <div class="status">
+      <p class="verdict"><span class="glyph" id="glyph">●</span><span id="verdict">Connecting…</span></p>
+      <p class="sub" id="sub">Reading the tower's latest liveness attestation.</p>
+    </div>
+    <div class="gauges">
+      <div class="gauge"><div class="k">ckb tip</div><div class="v" id="g-tip">—</div></div>
+      <div class="gauge"><div class="k">attest age</div><div class="v" id="g-age">—</div></div>
+      <div class="gauge"><div class="k">channels</div><div class="v" id="g-chan">—</div></div>
+      <div class="gauge"><div class="k">tenants</div><div class="v" id="g-tenant">—</div></div>
     </div>
   </section>
 
-  <footer>Sentinel serves this console, its JSON-RPC watchtower surface, and a public
-    <a href="/attestation">/attestation</a> anyone can verify. MIT licensed.</footer>
+  <section class="log">
+    <div class="head"><h2>Watch log</h2><span class="n" id="log-n">0</span></div>
+    <div id="log-body">
+      <div class="empty">No channels registered. A Fiber node enlists by pointing its
+        <span style="color:var(--muted)">standalone_watchtower_rpc_url</span> here.</div>
+    </div>
+  </section>
+
+  <footer>
+    Sentinel serves this console, a JSON-RPC watchtower surface, and a public
+    <a href="/attestation">/attestation</a> anyone can verify.<br>
+    the tower proves it is watching — you don't have to take its word. MIT licensed.
+  </footer>
 </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-function short(s){ return s && s.length > 20 ? s.slice(0,10)+"…"+s.slice(-6) : (s||"—"); }
+const short = (s) => s && s.length > 20 ? s.slice(0,10)+"…"+s.slice(-6) : (s||"—");
+
+/* ── vital-signs engine ──────────────────────────────────
+   A scrolling trace. Normal rhythm = a heartbeat every `beatMs`, one per
+   attestation interval. State sets colour + rhythm; "flat" (liveness unproven)
+   draws a flatline — the tower cannot prove it is alive. */
+const ecg = $('ecg'), ctx = ecg.getContext('2d');
+let W = 0, H = 0, dpr = Math.min(devicePixelRatio || 1, 2);
+function size() {
+  W = ecg.clientWidth; H = ecg.clientHeight;
+  ecg.width = W * dpr; ecg.height = H * dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+addEventListener('resize', size);
+
+const trace = [];            // y offsets from midline, newest at end
+const N = () => Math.max(220, Math.floor(W / 2.2));
+let phase = 0, sinceBeat = 0, beatGap = 46, mode = 'live';
+const COL = { live: getComputedStyle(document.documentElement).getPropertyValue('--live').trim(),
+              breach: getComputedStyle(document.documentElement).getPropertyValue('--breach').trim(),
+              warn: getComputedStyle(document.documentElement).getPropertyValue('--warn').trim() };
+
+// one QRS-like beat as a short sequence of offsets (unit amplitude)
+function beatShape() {
+  return [0, .05,-.06, -.14, .95, -.4, .1, .18, .05, 0];
+}
+let inject = [];   // queued beat samples
+
+// pre-seed the trace with a few heartbeats so the strip is alive immediately
+(function seed(){
+  for (let i=0;i<400;i++){
+    let y;
+    if (inject.length) y = inject.shift();
+    else { if (++sinceBeat >= beatGap){ sinceBeat=0; inject = beatShape().slice(); y = inject.shift(); }
+           else y = (Math.random()-.5)*0.02; }
+    trace.push(y);
+  }
+})();
+
+function step() {
+  requestAnimationFrame(step);
+  if (!W) size();
+  // rhythm by sample count (frame-rate independent enough for a vitals trace)
+  let y;
+  if (mode === 'flat') { y = 0; sinceBeat = 0; inject.length = 0; }
+  else if (inject.length) y = inject.shift();
+  else if (++sinceBeat >= beatGap) { sinceBeat = 0; inject = beatShape().slice(); y = inject.shift(); }
+  else y = (Math.random()-.5)*0.02 + Math.sin(phase)*0.012;
+  phase += 0.09;
+  trace.push(y);
+  while (trace.length > N()) trace.shift();
+
+  // render
+  ctx.clearRect(0,0,W,H);
+  const mid = H*0.56, amp = H*0.42;
+  const col = mode==='breach' ? COL.breach : mode==='warn' ? COL.warn : mode==='flat' ? COL.warn : COL.live;
+  // faint baseline
+  ctx.strokeStyle = 'rgba(255,255,255,.045)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+  // glow trace
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.shadowColor = col; ctx.shadowBlur = mode==='flat' ? 3 : 11;
+  ctx.strokeStyle = col; ctx.lineWidth = 2;
+  ctx.beginPath();
+  const n = trace.length, dx = W / N();
+  for (let i=0;i<n;i++){
+    const x = W - (n-1-i)*dx;
+    const yy = mid - trace[i]*amp;
+    i? ctx.lineTo(x,yy) : ctx.moveTo(x,yy);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  // leading dot
+  if (n) { const lx = W, ly = mid - trace[n-1]*amp;
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(lx-1, ly, 2.4, 0, 7); ctx.fill(); }
+}
+requestAnimationFrame(step);
+
+/* ── state ─────────────────────────────────────────────── */
+function setConsole(kind, verdict, sub, glyph) {
+  const c = $('console');
+  c.className = 'console ' + (kind==='breach'?'s-breach':kind==='warn'?'s-warn':'s-live');
+  $('verdict').textContent = verdict;
+  $('sub').textContent = sub;
+  $('glyph').textContent = glyph;
+  $('glyph').style.color = kind==='breach'?'var(--breach)':kind==='warn'?'var(--warn)':'var(--live)';
+  const pill = $('pill');
+  pill.className = 'pill ' + (kind==='breach'?'alarm':'on');
+  $('pill-t').textContent = kind==='breach' ? 'breach' : kind==='warn' ? 'degraded' : 'on watch';
+  $('alarmframe').className = 'alarmframe' + (kind==='breach'?' on':'');
+  mode = kind==='breach' ? 'breach' : kind==='warn' ? 'warn' : kind==='flat' ? 'flat' : 'live';
+  beatGap = kind==='breach' ? 22 : 46;   // breach: a racing pulse
+}
 
 async function tick() {
   let att, chans, scan;
   try {
-    att = await (await fetch('/attestation')).json();
-    chans = await (await fetch('/channels')).json();
-    scan = await (await fetch('/breaches')).json();
+    [att, chans, scan] = await Promise.all([
+      fetch('/attestation').then(r=>r.json()),
+      fetch('/channels').then(r=>r.json()),
+      fetch('/breaches').then(r=>r.json()),
+    ]);
   } catch (e) {
-    setState('breach', 'Tower unreachable', 'The console cannot reach the tower. If a node relies on it, it is currently unprotected.');
+    mode='flat';
+    setConsole('breach','Tower unreachable','This console cannot reach the tower. Any node relying on it is currently unprotected.','×');
     return;
   }
-  $('clock').textContent = new Date().toLocaleTimeString();
+  $('clock').textContent = new Date().toLocaleTimeString([], {hour12:false});
 
   const list = chans.channels || [];
   const tenants = new Set(list.map(c => c.node_id));
-  $('m-chan').textContent = chans.count ?? 0;
-  $('m-tenant').textContent = tenants.size;
-  $('chan-count').textContent = chans.count ?? 0;
-  const verdicts = {};
-  (scan.outcomes || []).forEach(o => { verdicts[o.channel_id] = o.verdict; });
-  renderChannels(list, verdicts);
+  $('g-chan').textContent = chans.count ?? 0;
+  $('g-tenant').textContent = tenants.size;
+  $('log-n').textContent = chans.count ?? 0;
 
-  // A live breach dominates everything — surface it above liveness state.
-  if ((scan.breaches || 0) > 0) {
-    const b = (scan.outcomes || []).find(o => o.verdict && o.verdict.state === 'breach');
-    const detail = b ? `channel ${short(b.channel_id)}: attacker broadcast commitment #${b.verdict.broadcast_commitment}, tower holds #${b.verdict.held_commitment}` : '';
-    setState('breach', `⚠ BREACH — ${scan.breaches} channel(s) under attack`,
-      `A stale-state theft was broadcast. ${detail}. The tower is executing the penalty.`);
-    return;
-  }
-
-  // A resolved breach is a win — show it prominently before falling back to liveness.
-  const resolved = (scan.outcomes || []).find(o => o.verdict && o.verdict.state === 'breach_resolved');
-  if (resolved) {
-    setState('live', 'Attack defeated · cheater swept',
-      `A stale-state theft on channel ${short(resolved.channel_id)} was punished — the tower's penalty swept the attacker's commitment on-chain.`);
-    return;
-  }
-
-  if (att.live) {
-    const a = att.attestation;
+  // always reflect liveness gauges (independent of breach state)
+  const a = att.attestation;
+  if (att.live && a) {
     $('pubkey').textContent = short(a.tower_pubkey);
-    $('m-height').textContent = a.ckb_tip_height;
-    $('m-age').textContent = (att.age_seconds ?? 0) + 's';
-    const stale = (att.age_seconds ?? 0) > 45;
-    if (stale) {
-      setState('warn', 'Attestation aging', 'The tower last proved liveness a while ago. If this keeps climbing, it has stopped watching.');
-    } else {
-      setState('live', 'Watching · proven live',
-        'The tower signed the current CKB tip. A sleeping tower could not produce this — its liveness is verifiable, not assumed.');
-    }
+    $('g-tip').innerHTML = a.ckb_tip_height + '';
+    $('g-age').innerHTML = (att.age_seconds ?? 0) + '<small>s</small>';
+    $('bpm').textContent = 'live';
   } else {
     $('pubkey').textContent = short(att.tower_pubkey);
-    $('m-height').textContent = '—';
-    $('m-age').textContent = '—';
-    setState('breach', 'Liveness unproven',
-      att.reason || 'The tower cannot currently prove it is watching. Do not rely on it.');
+    $('g-tip').textContent = '—'; $('g-age').textContent = '—';
+    $('bpm').textContent = 'flatline';
+  }
+
+  const verdicts = {};
+  (scan.outcomes || []).forEach(o => verdicts[o.channel_id] = o.verdict);
+  renderLog(list, verdicts);
+
+  // priority: active breach > resolved win > liveness state
+  if ((scan.breaches || 0) > 0) {
+    const b = (scan.outcomes||[]).find(o => o.verdict?.state === 'breach');
+    const d = b ? `channel ${short(b.channel_id)} — attacker broadcast commitment #${b.verdict.broadcast_commitment}, the tower holds #${b.verdict.held_commitment}.` : '';
+    setConsole('breach', 'Breach in progress', `A stale-state theft was broadcast. ${d} The tower is executing the penalty.`, '⚠');
+    return;
+  }
+  const won = (scan.outcomes||[]).find(o => o.verdict?.state === 'breach_resolved');
+  if (won) {
+    setConsole('live', 'Threat neutralized', `A theft on channel ${short(won.channel_id)} was punished — the tower's penalty swept the attacker's commitment on-chain.`, '✓');
+    return;
+  }
+  if (att.live && a) {
+    const stale = (att.age_seconds ?? 0) > 45;
+    if (stale) setConsole('warn','Liveness aging','The tower last proved itself a while ago. If this keeps climbing, it has stopped watching.','◐');
+    else setConsole('live','On watch','The tower signed the current CKB tip. A sleeping tower could not — its liveness is verifiable, not assumed.','●');
+  } else {
+    setConsole('flat','Liveness unproven', att.reason || 'The tower cannot currently prove it is watching. Do not rely on it.','◌');
   }
 }
 
-function setState(kind, title, sub) {
-  const watch = $('watch'), heart = $('heart'), status = $('status'), alarm = $('alarm');
-  watch.className = 'watch';
-  status.className = 'status-main';
-  const map = { live: ['--live','verdict-live'], warn: ['--warn','verdict-warn'], breach: ['--breach','verdict-breach'] };
-  const [cvar, cls] = map[kind];
-  status.classList.add(cls);
-  heart.style.setProperty('--c', `var(${cvar})`);
-  heart.classList.toggle('beating', kind !== 'breach');
-  status.querySelector('.big').textContent = title;
-  status.querySelector('.sub').textContent = sub;
-  if (kind === 'breach') { alarm.classList.add('on'); alarm.textContent = '⚠  ' + title + ' — ' + sub; }
-  else { alarm.classList.remove('on'); }
+function statusCell(cid, hasRev, verdicts) {
+  const v = verdicts[cid];
+  if (v?.state === 'breach') return '<span class="st breach"><span class="led"></span>breach · punishing</span>';
+  if (v?.state === 'breach_resolved') return '<span class="st swept"><span class="led"></span>cheater swept ✓</span>';
+  if (v?.state === 'channel_open') return '<span class="st watch"><span class="led"></span>watching</span>';
+  if (v?.state === 'legitimate_close') return '<span class="st muted">closed</span>';
+  if (v?.state === 'unactionable') return `<span class="st muted" title="${v.reason||''}">observing</span>`;
+  return hasRev ? '<span class="st watch"><span class="led"></span>defensible</span>' : '<span class="st muted">awaiting revocation</span>';
 }
 
-function defenseCell(channelId, hasRev, verdicts) {
-  const v = verdicts[channelId];
-  if (v) {
-    if (v.state === 'breach') return '<span style="color:var(--breach);font-weight:600">BREACH — punishing</span>';
-    if (v.state === 'breach_resolved') return '<span style="color:var(--live);font-weight:600">cheater swept ✔</span>';
-    if (v.state === 'channel_open') return '<span style="color:var(--live)">watching</span>';
-    if (v.state === 'legitimate_close') return '<span style="color:var(--muted)">closed (legit)</span>';
-    if (v.state === 'unactionable') return `<span style="color:var(--warn)" title="${v.reason||''}">not actionable</span>`;
-  }
-  return hasRev ? '<span style="color:var(--live)">defensible</span>' : '<span style="color:var(--dim)">awaiting revocation</span>';
-}
-
-function renderChannels(list, verdicts) {
-  verdicts = verdicts || {};
-  const body = $('chan-body');
+function renderLog(list, verdicts) {
+  const body = $('log-body');
   if (!list.length) return;
-  let rows = list.map(c => {
+  const rows = list.map(c => {
     const parts = Object.keys(c.parts || {});
-    const hasRev = parts.includes('revocation');
-    const chips = parts.map(p => `<span class="chip ${p==='revocation'?'rev':''}">${p}</span>`).join(' ');
+    const chips = parts.map(p => `<span class="chip ${p==='revocation'?'rev':''}">${p}</span>`).join('');
     return `<tr>
       <td class="mono">${short(c.channel_id)}</td>
-      <td class="tenant">${short(c.node_id)}</td>
+      <td class="m">${short(c.node_id)}</td>
       <td>${chips || '<span class="chip">—</span>'}</td>
-      <td class="mono">${defenseCell(c.channel_id, hasRev, verdicts)}</td>
+      <td>${statusCell(c.channel_id, parts.includes('revocation'), verdicts)}</td>
     </tr>`;
   }).join('');
   body.innerHTML = `<table>
-    <thead><tr><th>Channel</th><th>Node</th><th>Data held</th><th>Status</th></tr></thead>
+    <thead><tr><th>channel</th><th>node</th><th>data held</th><th>status</th></tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
 
-tick();
-setInterval(tick, 3000);
+size(); tick(); setInterval(tick, 3000);
 </script>
 </body>
 </html>
