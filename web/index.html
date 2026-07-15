@@ -203,6 +203,14 @@ async function tick() {
     return;
   }
 
+  // A resolved breach is a win — show it prominently before falling back to liveness.
+  const resolved = (scan.outcomes || []).find(o => o.verdict && o.verdict.state === 'breach_resolved');
+  if (resolved) {
+    setState('live', 'Attack defeated · cheater swept',
+      `A stale-state theft on channel ${short(resolved.channel_id)} was punished — the tower's penalty swept the attacker's commitment on-chain.`);
+    return;
+  }
+
   if (att.live) {
     const a = att.attestation;
     $('pubkey').textContent = short(a.tower_pubkey);
@@ -243,6 +251,7 @@ function defenseCell(channelId, hasRev, verdicts) {
   const v = verdicts[channelId];
   if (v) {
     if (v.state === 'breach') return '<span style="color:var(--breach);font-weight:600">BREACH — punishing</span>';
+    if (v.state === 'breach_resolved') return '<span style="color:var(--live);font-weight:600">cheater swept ✔</span>';
     if (v.state === 'channel_open') return '<span style="color:var(--live)">watching</span>';
     if (v.state === 'legitimate_close') return '<span style="color:var(--muted)">closed (legit)</span>';
     if (v.state === 'unactionable') return `<span style="color:var(--warn)" title="${v.reason||''}">not actionable</span>`;

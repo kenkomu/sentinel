@@ -126,13 +126,24 @@ impl ChainWatcher {
         };
         let commitment_args = detector::commitment_lock_args_from_tx(&tx_json)?;
 
-        let verdict = detector::decide(
+        let mut verdict = detector::decide(
             &create,
             revocation.as_ref(),
             &spend.tx_hash,
             0,
             &commitment_args,
         );
+
+        // If this was a breach but the revoked commitment cell is no longer live,
+        // it has already been swept (by our penalty) — report it resolved so the
+        // alarm clears and the win is visible.
+        if let Verdict::Breach { commitment_tx, commitment_index, .. } = &verdict {
+            if let Ok(status) = self.ckb.live_cell_status(commitment_tx, *commitment_index).await {
+                if status != "live" {
+                    verdict = Verdict::BreachResolved { commitment_tx: commitment_tx.clone() };
+                }
+            }
+        }
 
         if let Verdict::Breach { commitment_index, broadcast_commitment, .. } = &verdict {
             tracing::warn!(channel = %create.channel_id, node = %wc.node_id, "BREACH detected");

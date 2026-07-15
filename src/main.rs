@@ -353,6 +353,9 @@ fn verdict_json(v: &Verdict) -> serde_json::Value {
                 "held_commitment": held_commitment,
             })
         }
+        Verdict::BreachResolved { commitment_tx } => {
+            serde_json::json!({ "state": "breach_resolved", "commitment_tx": commitment_tx })
+        }
         Verdict::Unactionable { reason } => {
             serde_json::json!({ "state": "unactionable", "reason": reason })
         }

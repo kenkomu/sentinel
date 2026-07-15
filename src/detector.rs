@@ -34,6 +34,9 @@ pub enum Verdict {
         broadcast_commitment: u64,
         held_commitment: u64,
     },
+    /// A breach that has already been punished — the revoked commitment cell was
+    /// swept (by our penalty). The attacker lost; nothing left to do.
+    BreachResolved { commitment_tx: String },
     /// Commitment appeared but we cannot act (no revocation held, or the cell is
     /// not the commitment-lock we expected). Surfaced for alerting, not punished.
     Unactionable { reason: String },
